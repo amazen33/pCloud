@@ -1,0 +1,22 @@
+name: "Repository layout and governance"
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+permissions:
+  contents: read
+# Repository-wide invariants (docs/CONTRACT.md, sections A and F). Runs on
+# every change; static only, never reaches a host or cluster.
+jobs:
+  layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify repository layout
+        run: python tests/verify-layout.py
+      - name: Prove each layout rejection
+        run: python tests/test_verify_layout.py
