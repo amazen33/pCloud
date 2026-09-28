@@ -50,10 +50,28 @@ intended files. Use `git rev-parse --show-toplevel`, `git remote -v` and
 `git status`. Stop dependent work if the root or origin is wrong.
 
 Preserve unrelated work: no `git reset --hard`, `git clean`, blanket
-checkout/restore, or automatic stash of another session's work. Never
-remove `index.lock` just because Git reports it; check running Git
-processes and the lock's age, and preserve a confirmed stale lock in the
-recovery directory.
+checkout/restore, or automatic stash of another session's work.
+
+Git inspection and locks:
+
+- Read-only Git inspection runs with `GIT_OPTIONAL_LOCKS=0` (for example
+  `export GIT_OPTIONAL_LOCKS=0` in Bash/WSL, `$env:GIT_OPTIONAL_LOCKS = '0'`
+  in PowerShell), so that `git status` and similar commands never take or
+  leave the index lock.
+- Never remove a Git lock just because Git reports it. This covers
+  `.git/index.lock`, `.git/HEAD.lock`, `.git/objects/maintenance.lock` and
+  any other `*.lock` under `.git/`, as well as leftover
+  `.git/objects/??/tmp_obj_*` files. Check running Git processes and the
+  file's age first; preserve a confirmed stale lock in the recovery
+  directory before removing it. If a lock appears during your work, stop
+  and report its path and timestamp; do not retry repeatedly or delete it
+  automatically.
+- One Git writer per checkout. If your execution environment cannot delete
+  the lock and temporary files Git creates during a write (for example a
+  mounted folder where unlink is not permitted), make no Git writes there:
+  stop, and hand staging and committing to Codex on Windows with the exact
+  diff. Setting `core.createObject=rename` does not solve this: Git still
+  cannot remove `HEAD.lock`, `maintenance.lock` and other lock files.
 
 ## C. Product ownership
 
@@ -121,10 +139,21 @@ test results or compliance evidence.
   cleanup without applicable owner authorization.
 - `tests/verify-layout.py` (driven by `tests/layout-manifest.json`) rejects
   nested Git metadata, submodules, recovery/backup directories, bundles,
-  literal `~` paths, tracked local state and configuration, missing or
-  untracked package test entry points, package tests CI does not invoke,
-  and README references to test scripts that do not exist.
-  `tests/test_verify_layout.py` proves each rejection.
+  literal `~` paths, tracked local state and configuration, and missing or
+  untracked package test entry points. A package or root check counts as
+  run by CI only when a `run:` step of an enabled workflow job executes it
+  from the step's effective working directory; comments, step names and
+  other jobs do not count. Recognition is limited to direct script calls and
+  supported Python/Bash/PowerShell script invocations; merely passing a test
+  path to echo, inline code or a syntax-only check does not count. Unknown
+  invocation forms require extending the guard and its tests before use.
+  This checks declared invocation, not general shell semantics or runtime
+  success; actual CI must still pass. README references to test scripts must resolve
+  exactly (README folder or repository root), except the documented
+  shorthands `tests/<file>` and `/path/to/<package>/tests/<file>`, which are
+  accepted below the root only for the declared test entry of a package
+  that contains the README or sits below its folder. `tests/test_verify_layout.py`
+  proves each rejection.
 - Never bypass a failing check or force-push to make a gate green.
 
 ## G. Coordination and handoff

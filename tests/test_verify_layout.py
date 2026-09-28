@@ -6,7 +6,7 @@ Usage: python tests/test_verify_layout.py
 Each test builds a small throwaway Git repository in the system temporary
 directory (never inside this product), confirms that the valid fixture
 passes, applies exactly one violation, and asserts that the verifier fails
-with the expected message. Standard library and the git CLI only.
+with the expected message. Needs PyYAML 6.0.3 (as the verifier) and git.
 """
 from __future__ import annotations
 
@@ -248,6 +248,124 @@ class LayoutRejectionTests(unittest.TestCase):
         self.write("deploy/README.md", "| demo | `tests/verify-layer3.py` |\n")
         self.commit()
         self.assert_rejects("deploy/README.md references a test script that does not exist: tests/verify-layer3.py")
+
+    # --- CI invocation is parsed, not substring-matched ----------------------
+    ENGINE_STEP = "      - run: bash tests/verify-layer1.sh\n"
+
+    def test_step_working_directory_override_passes(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP,
+            "      - run: echo job default ignored\n"
+            "      - working-directory: deploy/01-engine\n"
+            "        run: |\n"
+            "          bash demo/tests/verify-layer1.sh \\\n"
+            "            --verbose\n"))
+        self.assert_passes()
+
+    def test_rejects_command_only_in_yaml_comment(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: echo skipped\n#      - run: bash tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_command_only_in_shell_comment(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP,
+            "      - run: |\n"
+            "          # bash tests/verify-layer1.sh\n"
+            "          echo skipped  # bash tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_command_only_in_step_name(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - name: bash tests/verify-layer1.sh\n        run: echo skipped\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_package_and_test_name_in_unrelated_jobs(self) -> None:
+        workflow = WORKFLOW.replace(self.ENGINE_STEP, "      - run: ls -la\n") + (
+            "  other:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: ls deploy/01-engine/demo\n"
+            "      - run: bash tests/verify-layer1.sh\n")
+        self.write(".github/workflows/ci.yml", workflow)
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_command_from_wrong_working_directory(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP,
+            "      - working-directory: deploy/00-infra/demo\n"
+            "        run: bash tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_command_in_disabled_job(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            "  engine:\n    runs-on: ubuntu-latest\n",
+            "  engine:\n    if: false\n    runs-on: ubuntu-latest\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_test_path_as_echo_argument(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: echo tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_test_path_as_redirection_target(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: echo ready > tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_script_argument_to_python_inline_code(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: python -c pass tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_bash_syntax_only_check_as_execution(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: bash -n tests/verify-layer1.sh\n"))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_rejects_ambiguous_shell_quoting(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, '      - run: |\n          bash "tests/verify-layer1.sh\n'))
+        self.assert_rejects("package test not invoked by CI: deploy/01-engine/demo/tests/verify-layer1.sh")
+
+    def test_powershell_file_invocation_passes(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            "      - run: ./deploy/00-infra/demo/tests/verify.ps1\n",
+            "      - run: powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/00-infra/demo/tests/verify.ps1\n"))
+        self.assert_passes()
+
+    def test_chained_script_invocation_and_python_flags_pass(self) -> None:
+        self.write(".github/workflows/ci.yml", WORKFLOW.replace(
+            self.ENGINE_STEP, "      - run: echo ready; bash tests/verify-layer1.sh\n").replace(
+            "python tests/verify-layout.py", "python3 -B tests/verify-layout.py"))
+        self.assert_passes()
+
+    # --- README references resolve exactly --------------------------------
+    def test_documented_placeholder_reference_passes(self) -> None:
+        self.write("deploy/01-engine/demo/README.md", "Copy it, then run `bash /path/to/demo/tests/verify-layer1.sh`.\n")
+        self.commit()
+        self.assert_passes()
+
+    def test_rejects_broken_relative_readme_path(self) -> None:
+        self.write("deploy/01-engine/demo/README.md", "Run `bash ../wrong/tests/verify-layer1.sh`.\n")
+        self.commit()
+        self.assert_rejects("deploy/01-engine/demo/README.md references a test script that does not exist: "
+                            "../wrong/tests/verify-layer1.sh")
+
+    def test_rejects_placeholder_naming_another_test(self) -> None:
+        self.write("deploy/01-engine/demo/README.md", "Run `bash /path/to/demo/tests/verify-layer9.sh`.\n")
+        self.commit()
+        self.assert_rejects("references a test script that does not exist: /path/to/demo/tests/verify-layer9.sh")
+
+    def test_rejects_shorthand_outside_package_context(self) -> None:
+        self.write("docs/guide.md", "Run `tests/verify.ps1`.\n")
+        self.commit()
+        self.assert_rejects("docs/guide.md references a test script that does not exist: tests/verify.ps1")
+
+    def test_rejects_bare_shorthand_in_root_readme(self) -> None:
+        self.write("README.md", "Run `python tests/verify-layout.py`, then `tests/verify.ps1`.\n")
+        self.commit()
+        self.assert_rejects("README.md references a test script that does not exist: tests/verify.ps1")
 
     def test_rejects_broken_root_readme_path(self) -> None:
         self.write("README.md", "Run `deploy/00-infra/other/tests/verify.ps1`.\n")
