@@ -1,0 +1,64 @@
+name: "Infrastructure gate: deploy/"
+on:
+  push:
+    paths: ["deploy/**", "tests/**", ".github/workflows/infra.yml"]
+  pull_request:
+    paths: ["deploy/**", "tests/**", ".github/workflows/infra.yml"]
+permissions:
+  contents: read
+# Static checks only. Nothing here can reach the Hyper-V hosts or change
+# infrastructure: `tofu apply` and the Ansible playbooks are run by a human
+# (development contract: no infrastructure action without explicit approval).
+jobs:
+  layer0:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          # Plain tofu binary: the wrapper rewrites stdout and exit codes,
+          # which the Layer 0 tests read.
+          tofu_wrapper: false
+      - name: Verify standalone Layer 0 (the directory's one test command)
+        shell: pwsh
+        run: ./deploy/00-infra/private-hyperv/tests/verify.ps1 -RunTofu
+
+  ansible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/01-k8s-engine/rke2-ansible
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ansible-core
+      - name: Layer 1 standalone syntax and inventory checks
+        run: bash tests/verify-layer1.sh
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Layer 2 test dependency
+        run: python -m pip install PyYAML==6.0.3
+      - name: Verify repository layout
+        run: python tests/verify-layout.py
+      - name: Verify standalone Layer 2 package
+        run: python deploy/02-cluster-addons/tests/verify-layer2.py
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+      - name: Render and validate the add-on manifests
+        run: |
+          # Schemas for the lab's Kubernetes minor (RKE2 v1.35.x).
+          kubectl kustomize deploy/02-cluster-addons | kubeconform -kubernetes-version 1.35.0 -strict -summary -
+          kubeconform -kubernetes-version 1.35.0 -strict -summary deploy/02-cluster-addons/tests/smoke.yaml
