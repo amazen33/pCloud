@@ -17,6 +17,6 @@ It is retained as historical evidence, not a claim that this reorganized
 pCloud tree has been applied or that all of Layer 2 is complete.
 Missing approvals/log excerpts/render digests are not reconstructed.
 
-Old editing checkouts and their untracked/ignored files are to be retained
-in a separately approved recovery folder, outside the final repository.
+Old editing checkouts and all their untracked/ignored files were preserved
+in D:\project\pCloud-worktree-recovery-20260928 with explicit owner approval.
 Their Git history remains in IOT-EE; pCloud has its own root repository.
