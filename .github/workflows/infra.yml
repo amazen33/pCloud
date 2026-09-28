@@ -1,5 +1,6 @@
 name: "Infrastructure gate: deploy/"
 on:
+  workflow_dispatch:
   push:
     paths: ["deploy/**", "tests/**", ".github/workflows/infra.yml"]
   pull_request:
