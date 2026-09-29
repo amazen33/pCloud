@@ -18,6 +18,27 @@ This is a **single-host lab**, not a highly available or production design.
 | **Owns** | Inputs (`terraform.tfvars.example`), host preparation and helpers (`scripts/`), OpenTofu configuration and provider lock, tests (`tests/`), outputs. Copy the whole directory, including `.terraform.lock.hcl` and `.gitignore` |
 | **Keeps out of Git** | `terraform.tfvars`, state, saved plans, `out/`, `hosts.ini`, VM disks and images, downloaded tools |
 
+## Test this package
+
+The static test needs no Hyper-V host, no `terraform.tfvars` and no
+administrator rights, and writes only to temporary folders. Run it from any
+directory, including a copy of this folder outside pCloud:
+
+```powershell
+# Windows PowerShell 5.1 (or pwsh on Windows, Linux or macOS)
+powershell -NoProfile -ExecutionPolicy Bypass -File /path/to/private-hyperv/tests/verify.ps1
+# Also tofu fmt, locked init and validate in a temporary copy: needs tofu 1.6+
+# and network access to download the pinned providers (or a provider mirror)
+powershell -NoProfile -ExecutionPolicy Bypass -File /path/to/private-hyperv/tests/verify.ps1 -RunTofu
+```
+
+It ends with `Layer 0 standalone checks passed.` and exits non-zero on any
+failure. The read-only live check of existing VMs is
+`scripts/check-layer0.ps1` (see [Check and hand over](#check-and-hand-over));
+it needs an elevated session on the Hyper-V host and writes its report to
+`out/`. In a pCloud checkout, [tests/README.md](../../../tests/README.md)
+describes running all packages by mode.
+
 ## What it creates
 
 `scripts/prep-hyperv-host.ps1` first checks disk capacity, then enables
