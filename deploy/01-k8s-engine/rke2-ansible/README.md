@@ -141,17 +141,39 @@ certificate (when using `prep-hyperv-host.ps1 -ApiServerForwardTo`), copy
 `inventory/group_vars/all/local.yml` and set `rke2_kubeconfig_dest` or
 `rke2_tls_san` there -- not with `-e`.
 
-## Verify the hardening yourself
+## Test this package
 
-Run the package's offline tests from any working directory, including when
-this folder is copied outside the IOT-EE repository:
+Run the package's static tests from any working directory, including when
+this folder is copied outside pCloud:
 
 ```bash
 bash /path/to/rke2-ansible/tests/verify-layer1.sh
 ```
 
-The script needs `ansible-core` and Bash; it uses only files in this folder,
-never contacts a node, and needs no Layer 0 checkout or Terraform state.
+The script needs Bash and `ansible-core` (`python -m pip install
+ansible-core`), so it runs on Linux or inside WSL, not in Windows
+PowerShell; from Windows, open a WSL shell and use the folder's
+`/mnt/<drive>/...` path. It uses only files in this folder, never contacts a
+node, needs no Layer 0 checkout or Terraform state, and ends with `Layer 1
+offline checks passed.`
+
+Read-only live checks, from this folder, with the real git-ignored
+`inventory/hosts.ini` and SSH host keys already verified:
+
+```bash
+export ANSIBLE_CONFIG="$PWD/ansible.cfg"   # Ansible ignores ansible.cfg in a world-writable folder, such as a Windows drive in WSL
+ansible-playbook -i inventory/hosts.ini tests/validate-inventory-live.yml   # live-run inventory rules; contacts no host
+ansible-playbook -i inventory/hosts.ini guard-cni.yml                       # read-only on the servers
+ansible-playbook -i inventory/hosts.ini health.yml -e report_dir=/tmp/rke2-health   # read-only on nodes; report outside this folder
+```
+
+In a pCloud checkout, [tests/README.md](../../../tests/README.md) describes
+running these by mode.
+
+### Verify the hardening yourself
+
+Against a running cluster (the privileged pod must be rejected, so nothing
+is created when the control works):
 
 ```bash
 ansible -i inventory/hosts.ini rke2_server -b -m ansible.builtin.command -a '/usr/local/bin/rke2 secrets-encrypt status'

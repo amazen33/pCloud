@@ -22,3 +22,14 @@ jobs:
         run: python tests/verify-layout.py
       - name: Prove each layout rejection
         run: python tests/test_verify_layout.py
+      - name: Test the dispatcher (PowerShell 7)
+        run: pwsh -NoProfile -File tests/run.Tests.ps1
+
+  dispatcher-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test the dispatcher (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/run.Tests.ps1

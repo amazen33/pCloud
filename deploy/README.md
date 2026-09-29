@@ -9,9 +9,13 @@ working directory or Terraform state.
 | --- | --- | --- | --- | --- |
 | Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
-| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`, `kubectl kustomize 02-cluster-addons` and kubeconform in CI | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Storage and secrets packages are not designed yet |
+| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Storage and secrets packages are not designed yet |
 | Layer 3 | Not implemented | LGTM and OpenTelemetry Collector | Synthetic logs, metrics, traces, service graph and recovery tests required | Planned |
 | Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
+
+Every check by mode (Static, Live, Smoke), its prerequisites on Windows and
+Linux/WSL, and the dispatcher that runs them are described in
+[tests/README.md](../tests/README.md).
 
 Layer 0 uses the pinned `windsorcli/hyperv` provider locally on the Windows
 host. Copy its whole directory to use it in another project. Its

@@ -16,17 +16,26 @@ upstream release; its source and SHA-256 are in `kube-vip/UPSTREAM.md`.
 
 ## Test this package alone
 
-From any working directory, with Python 3.12+ and PyYAML 6.0.3:
+From any working directory, on Windows or Linux, with Python 3.12+ and
+PyYAML 6.0.3:
 
 ```bash
-python /path/to/k8s/tests/verify-layer2.py
+python /path/to/02-cluster-addons/tests/verify-layer2.py
+# Also render with Kustomize and validate the render and tests/smoke.yaml with
+# kubeconform -strict (Kubernetes 1.35.0 schemas). Needs kubectl and
+# kubeconform v0.7.0 on PATH; kubeconform downloads the schemas.
+python /path/to/02-cluster-addons/tests/verify-layer2.py --render
 ```
 
 This checks that all Kustomize resources are local, the pinned upstream
 manifest is byte-for-byte intact, resource identities are unique, the
-images and services-only mode are reviewed, and the lab address pool is
-valid. CI additionally runs `kubectl kustomize` and `kubeconform -strict` on
-the render. No test contacts a cluster or applies resources.
+images and services-only mode are reviewed, the lab address pool is valid,
+and the smoke manifest meets restricted Pod Security. It also runs the
+`--render` logic against fake `kubectl` and `kubeconform` in a temporary
+folder, to prove that a failed render stops before validation and that a
+failed validation fails. CI runs it with `--render`. No test contacts a cluster or applies resources. In a pCloud
+checkout, [tests/README.md](../../tests/README.md) describes running all
+packages by mode.
 
 ## Lab preflight and reviewed install
 
@@ -41,7 +50,7 @@ kubectl get pods -A --field-selector=status.phase!=Running
 kubectl -n kube-system get deploy kube-vip-cloud-provider --ignore-not-found
 kubectl -n kube-system get ds kube-vip-ds --ignore-not-found
 kubectl get svc -A -o wide
-kubectl kustomize /path/to/k8s > /tmp/layer2-reviewed.yaml
+kubectl kustomize /path/to/02-cluster-addons > /tmp/layer2-reviewed.yaml
 kubectl diff -f /tmp/layer2-reviewed.yaml
 kubectl apply --dry-run=server -f /tmp/layer2-reviewed.yaml
 ```
