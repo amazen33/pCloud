@@ -10,7 +10,7 @@ working directory or Terraform state.
 | Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
 | Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Storage and secrets packages are not designed yet |
-| Layer 3 | Not implemented | LGTM and OpenTelemetry Collector | Synthetic logs, metrics, traces, service graph and recovery tests required | Planned |
+| Layer 3 | `03-observability/` (planning [README](03-observability/README.md) only) | LGTM and OpenTelemetry Collector | None exists; synthetic logs, metrics, traces, service graph, access, retention and recovery tests required | **NOT IMPLEMENTED**; planned. No manifest or package; no pCloud Layer 3 installation has been verified |
 | Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
 
 Every check by mode (Static, Live, Smoke), its prerequisites on Windows and
@@ -57,10 +57,11 @@ operation.
 3. **Layer 2 prerequisites:** install and test the chosen LoadBalancer,
    storage and secrets components as separate packages. `02-cluster-addons/` currently
    contains only kube-vip manifests; it does not install storage or a vault.
-4. **Layer 3 observability:** install the Collector and LGTM stack before
-   application instrumentation. Its future package must prove synthetic
-   ingest/query, a service-graph edge, access controls, retention, restart,
-   failure isolation and rollback without IOT-EE application code.
+4. **Layer 3 observability (not implemented):** install the Collector and
+   LGTM stack before application instrumentation. Its future package must
+   prove synthetic ingest/query, a service-graph edge, access controls,
+   retention, restart, failure isolation and rollback without IOT-EE
+   application code; see [03-observability/README.md](03-observability/README.md).
 5. **Platform services:** install Kafka and APISIX in separate version-pinned
    packages. Kafka must prove durable produce/consume, broker recovery and
    authorization. APISIX must prove HTTPS routing, JWT enforcement, rate
@@ -84,3 +85,39 @@ The Layer 0 `-RunTofu` option additionally runs OpenTofu in a temporary copy.
 On the owner's Windows session, Application Control blocked `tofu.exe`, while
 the 33 default PowerShell checks passed and GitHub CI validated OpenTofu.
 That local restriction is not evidence of a failed or successful live apply.
+
+## Phase dependencies and deployment profiles
+
+Each phase consumes documented outputs of the phase before it, never its
+working directory or state. A phase may be reused or skipped when the
+environment already supplies its capabilities, provided it passes the same
+capability tests. "Planned" and "not designed" mean no implementation
+exists.
+
+| Phase | Needs from earlier phases | Provides | Status |
+| --- | --- | --- | --- |
+| Layer 0 | A Windows Hyper-V host | VMs, network, inventory handover | Package merged |
+| Layer 1 | Ubuntu VMs and an inventory, from Layer 0 or any compatible provider | Kubernetes API and kubeconfig | Package merged |
+| Layer 2 | A working Kubernetes API | LoadBalancer addresses (kube-vip); storage and secrets packages are not designed | kube-vip installed in the lab |
+| Layer 3 | Installed profiles: a healthy cluster, exposure of services, and the storage and secret-management capabilities their design requires. External profile: supplied endpoints and credentials only | The observability capability contract (planned): ingest, query, dashboards, alerts | **NOT IMPLEMENTED**; the storage and secrets packages that installed profiles need are not designed |
+| Platform services | Layers 0-3 or their equivalents | Kafka and APISIX packages | Planned |
+| Applications (IOT-EE) | The platform capabilities they consume, through versioned endpoints and configuration | IoT services with their own instrumentation and dashboards | Owned and released by IOT-EE |
+
+Layer 3 profiles (none is implemented; details in
+[03-observability/README.md](03-observability/README.md)):
+
+| Profile | Phases pCloud installs | Layer 3 prerequisites | Notes |
+| --- | --- | --- | --- |
+| Lab | Layers 0-3 on the single-host lab | Cluster, service exposure, storage and secret management suited to the lab design | Proves function only; no HA, DR or capacity claim |
+| Existing cluster | Layer 3 on a compatible cluster installed elsewhere | The same, supplied by that cluster | Layers 0-2 skipped when the cluster already supplies their capabilities |
+| External observability | None for Layer 3 | Supplied endpoints, credentials and a designated test scope; none of pCloud's backend dependencies | The environment supplies the stack; pCloud verifies it with the live acceptance checks |
+| Production | To be designed | To be designed | Needs separate HA, DR, capacity and 24x7 evidence |
+
+The ownership boundary with IOT-EE already exists in
+[the working contract](../docs/CONTRACT.md) (section C): pCloud owns
+platform installation, operation and the capability contract; IOT-EE owns
+instrumentation, domain dashboards and alerts. Neither reads the other's
+repository files, inventory or state.
+[The proposed ownership ADR](../docs/adr/XXXX-proposed-pcloud-iot-ee-ownership-and-observability-boundary.md)
+records how that applies to observability. The Layer 3 installation and the
+published capability contract remain planned.
