@@ -1,0 +1,114 @@
+---
+# One declared disk. Order is the safety property:
+#   1. read facts (read-only);
+#   2. decide: identity, safety guards, mode rules (assert);
+#   3. verify mode stops here with a read-only report;
+#   4. otherwise, and only outside check mode, ask for the typed authorization
+#      that names the verified disk, decide again with it (assert), and only
+#      then include apply-storage.yml, which re-checks once more.
+# Inputs: local_pv_disk (loop variable) and local_pv_mode (blank|adopt|verify).
+- name: "{{ local_pv_disk.name }}: set the expected mount point"
+  ansible.builtin.set_fact:
+    local_pv_mount_path: "{{ local_pv_mount_root }}/{{ local_pv_disk.name }}"
+    local_pv_node: "{{ inventory_hostname }}"
+
+- name: "{{ local_pv_disk.name }}: read the node's disk facts (read-only)"
+  ansible.builtin.include_tasks: gather-disk-facts.yml
+  vars:
+    local_pv_gather_mounts: "{{ local_pv_mode == 'verify' }}"
+
+- name: "{{ local_pv_disk.name }}: decide whether this disk may be touched"
+  ansible.builtin.set_fact:
+    local_pv_decision: "{{ lookup('ansible.builtin.template', 'select-refusals.j2') | from_json }}"
+  vars:
+    local_pv_require_confirmation: false
+
+- name: "{{ local_pv_disk.name }}: refuse an unsafe or unmatched target"
+  ansible.builtin.assert:
+    that: local_pv_decision.refusals | length == 0
+    fail_msg: "Refusing {{ local_pv_node }} disk {{ local_pv_disk.name }} ({{ local_pv_mode }}): {{ local_pv_decision.refusals | join('; ') }}"
+    quiet: true
+
+- name: "{{ local_pv_disk.name }}: verify package-managed storage (read-only)"
+  when: local_pv_mode == 'verify'
+  block:
+    - name: Judge the data mount and the volumes
+      ansible.builtin.set_fact:
+        local_pv_verdict: "{{ lookup('ansible.builtin.template', 'verify-report.j2') | from_json }}"
+      vars:
+        local_pv_target_path: "{{ local_pv_decision.target.path }}"
+        local_pv_raw_mount: "{{ local_pv_mount_result.stdout }}"
+
+    - name: Make the report directory (controller)
+      ansible.builtin.file:
+        path: "{{ local_pv_report_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+
+    - name: Build the verification stamp (bound to this configuration and moment)
+      ansible.builtin.set_fact:
+        local_pv_stamp: "{{ lookup('ansible.builtin.template', 'stamp.j2') | from_json }}"
+      vars:
+        local_pv_stamp_digest: "{{ (lookup('ansible.builtin.template', 'config-digests.j2', template_vars={'local_pv_digest_inventory': local_pv_inventory}) | from_json)[local_pv_node ~ '/' ~ local_pv_disk.name] }}"
+        local_pv_now_epoch: "{{ now(utc=true).timestamp() | int }}"
+        local_pv_now_utc: "{{ now(utc=true).isoformat() }}"
+
+    - name: Write the verification stamp that render-pvs.yml requires (controller)
+      ansible.builtin.copy:
+        dest: "{{ local_pv_report_dir }}/verified-{{ local_pv_node }}-{{ local_pv_disk.name }}.json"
+        content: "{{ local_pv_stamp | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    - name: Report warnings
+      ansible.builtin.debug:
+        msg: "{{ local_pv_node }}/{{ local_pv_disk.name }}: {{ local_pv_verdict.warnings | join('; ') }}"
+      when: local_pv_verdict.warnings | length > 0
+
+    - name: Fail closed unless the mount and volumes are correct
+      ansible.builtin.assert:
+        that: local_pv_verdict.failures | length == 0
+        fail_msg: "Storage check failed for {{ local_pv_node }}/{{ local_pv_disk.name }}: {{ local_pv_verdict.failures | join('; ') }}"
+        success_msg: "{{ local_pv_node }}/{{ local_pv_disk.name }} verified: {{ local_pv_mount_path }} on {{ local_pv_decision.target.path }}, {{ local_pv_verdict.used_percent }}% used"
+
+- name: "{{ local_pv_disk.name }}: plan"
+  ansible.builtin.debug:
+    msg:
+      - "Target {{ local_pv_decision.target.path }} ({{ local_pv_decision.target.size }} bytes) passed every guard for {{ local_pv_mode }}."
+      - "To authorize, type exactly: {{ local_pv_decision.confirmation }}"
+  when: local_pv_mode != 'verify'
+
+- name: "{{ local_pv_disk.name }}: check mode changes nothing"
+  ansible.builtin.debug:
+    msg: "Check mode: no confirmation asked, nothing formatted, mounted or written."
+  when: local_pv_mode != 'verify' and ansible_check_mode
+
+- name: "{{ local_pv_disk.name }}: authorize, re-check, then change"
+  when: local_pv_mode != 'verify' and not ansible_check_mode
+  block:
+    - name: Ask for the typed authorization
+      ansible.builtin.pause:
+        prompt: "Type exactly: {{ local_pv_decision.confirmation }}"
+        echo: true
+      register: local_pv_prompt
+
+    - name: Decide again with the typed authorization
+      ansible.builtin.set_fact:
+        local_pv_decision: "{{ lookup('ansible.builtin.template', 'select-refusals.j2') | from_json }}"
+      vars:
+        local_pv_require_confirmation: true
+        local_pv_typed_confirmation: "{{ local_pv_prompt.user_input | default('') }}"
+
+    - name: Refuse without an authorization that names the verified disk
+      ansible.builtin.assert:
+        that: local_pv_decision.refusals | length == 0
+        fail_msg: "Refusing {{ local_pv_node }} disk {{ local_pv_disk.name }}: {{ local_pv_decision.refusals | join('; ') }}"
+        quiet: true
+
+    - name: Apply
+      ansible.builtin.include_tasks: apply-storage.yml
+      vars:
+        local_pv_typed_confirmation: "{{ local_pv_prompt.user_input | default('') }}"

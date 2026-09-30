@@ -1,0 +1,94 @@
+{#-
+  Pure decision for verify mode: is the package-managed data mount present and
+  correct, and are its volumes usable? Every doubt is a failure (fail closed).
+  Output JSON: {"failures": [...], "warnings": [...], "used_percent": N|null}
+
+  Inputs
+    local_pv_disk        declaration (name, filesystem_uuid, volumes[])
+    local_pv_node        node name
+    local_pv_mount_path  expected mount point
+    local_pv_target_path resolved device path of the identified disk (e.g. /dev/sdb)
+    local_pv_raw_mount   key=value lines and "vol|<subdir>|dir|dev|uid|gid|mode|marker"
+                         lines read from the node (see gather-disk-facts.yml)
+    local_pv_warn_used_percent / local_pv_crit_used_percent
+-#}
+{%- set failures = [] -%}
+{%- set warnings = [] -%}
+{%- set kv = {} -%}
+{%- set vols = {} -%}
+{%- for line in local_pv_raw_mount.splitlines() -%}
+  {%- if line.startswith('vol|') -%}
+    {%- set p = line.split('|') -%}
+    {%- if p | length > 3 and p[2] == 'dir' -%}
+      {%- set _ = vols.update({p[1]: {'dir': true, 'dev': p[3], 'uid': p[4], 'gid': p[5], 'mode': p[6], 'marker': (p[7] if p | length > 7 else '')}}) -%}
+    {%- else -%}
+      {%- set _ = vols.update({p[1]: {'dir': false}}) -%}
+    {%- endif -%}
+  {%- elif '=' in line -%}
+    {%- set _ = kv.update({line.split('=', 1)[0]: line.split('=', 1)[1]}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set uuid = local_pv_disk.filesystem_uuid | default('', true) -%}
+{%- set used = none -%}
+{%- if uuid == '' -%}
+  {%- set _ = failures.append('no filesystem UUID is recorded for this disk') -%}
+{%- endif -%}
+{%- if kv.get('end', '') != 'ok' -%}
+  {%- set _ = failures.append('the mount probe output is incomplete, so it was cut short') -%}
+{%- endif -%}
+{%- if kv.get('probe_error', '') != '' -%}
+  {%- set _ = failures.append('the mount could not be inspected (' ~ kv.get('probe_error') ~ '); it is treated as unusable') -%}
+{%- elif kv.get('mounted', '') == 'no' -%}
+  {%- set _ = failures.append('the data mount is absent at ' ~ local_pv_mount_path ~ '; volumes on it must not be used') -%}
+{%- elif kv.get('mounted', '') != 'yes' -%}
+  {%- set _ = failures.append('the mount state was not reported, so the mount is treated as unusable') -%}
+{%- else -%}
+  {%- if kv.get('source', '') != local_pv_target_path -%}
+    {%- set _ = failures.append('the mount at ' ~ local_pv_mount_path ~ ' comes from ' ~ (kv.get('source', '') or 'unknown') ~ ', not from the identified disk ' ~ local_pv_target_path) -%}
+  {%- endif -%}
+  {%- if kv.get('uuid', '') != uuid -%}
+    {%- set _ = failures.append('the mounted filesystem UUID ' ~ (kv.get('uuid', '') or 'unknown') ~ ' differs from the recorded UUID ' ~ uuid) -%}
+  {%- endif -%}
+  {%- if kv.get('fstype', '') != 'ext4' -%}
+    {%- set _ = failures.append('the mounted filesystem type is ' ~ (kv.get('fstype', '') or 'unknown') ~ ', not ext4') -%}
+  {%- endif -%}
+  {%- if 'ro' in kv.get('options', '').split(',') -%}
+    {%- set _ = failures.append('the data mount is read-only') -%}
+  {%- endif -%}
+  {%- if kv.get('mount_dev', '') == '' or kv.get('mount_dev', '') == kv.get('root_dev', 'x') -%}
+    {%- set _ = failures.append('the mount point is on the root filesystem, not on its own device') -%}
+  {%- endif -%}
+  {%- set marker = kv.get('marker', '') -%}
+  {%- if 'uuid=' ~ uuid not in marker or 'disk=' ~ local_pv_disk.name not in marker or 'node=' ~ local_pv_node not in marker -%}
+    {%- set _ = failures.append('the disk marker file is missing or names a different disk, node or UUID') -%}
+  {%- endif -%}
+  {%- for vol in local_pv_disk.volumes | default([]) -%}
+    {%- set v = vols.get(vol.subdir, none) -%}
+    {%- if v is none or not v.dir -%}
+      {%- set _ = failures.append('volume directory ' ~ vol.subdir ~ ' is missing under the mount') -%}
+    {%- else -%}
+      {%- if v.dev != kv.get('mount_dev', '') -%}
+        {%- set _ = failures.append('volume directory ' ~ vol.subdir ~ ' is not on the mounted filesystem') -%}
+      {%- endif -%}
+      {%- set mode_ok = v.mode in [(vol.mode | string)[1:], (vol.mode | string)] -%}
+      {%- if (v.uid | int) != vol.owner_uid or (v.gid | int) != vol.owner_gid or not mode_ok -%}
+        {%- set _ = failures.append('volume directory ' ~ vol.subdir ~ ' has owner ' ~ v.uid ~ ':' ~ v.gid ~ ' mode ' ~ v.mode ~ ', expected ' ~ vol.owner_uid ~ ':' ~ vol.owner_gid ~ ' mode ' ~ vol.mode) -%}
+      {%- endif -%}
+      {%- if 'volume=' ~ vol.name not in v.marker or 'uuid=' ~ uuid not in v.marker -%}
+        {%- set _ = failures.append('volume directory ' ~ vol.subdir ~ ' has no marker naming volume ' ~ vol.name ~ ' on this filesystem') -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set parts = kv.get('usage', '').split() -%}
+  {%- if parts | length == 2 and parts[0] is match('^[0-9]+$') and parts[1] is match('^[0-9]+$') and parts[0] | int > 0 -%}
+    {%- set used = (parts[1] | int) * 100 // (parts[0] | int) -%}
+    {%- if used >= (local_pv_crit_used_percent | int) -%}
+      {%- set _ = failures.append('the filesystem is ' ~ used ~ '% full (critical at ' ~ local_pv_crit_used_percent ~ '%)') -%}
+    {%- elif used >= (local_pv_warn_used_percent | int) -%}
+      {%- set _ = warnings.append('the filesystem is ' ~ used ~ '% full (warning at ' ~ local_pv_warn_used_percent ~ '%)') -%}
+    {%- endif -%}
+  {%- else -%}
+    {%- set _ = failures.append('filesystem usage could not be read') -%}
+  {%- endif -%}
+{%- endif -%}
+{{ {'failures': failures, 'warnings': warnings, 'used_percent': used} | to_json }}

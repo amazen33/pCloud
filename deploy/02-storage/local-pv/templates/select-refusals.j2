@@ -1,0 +1,131 @@
+{#-
+  Pure decision: may this declared disk be touched in this mode, and what must
+  the operator type to authorize it? Output is JSON:
+    {"refusals": [...], "target": {...}|null, "matches": N, "confirmation": "..."}
+  An empty refusals list is the only "go". Nothing here contacts a host.
+
+  Inputs
+    local_pv_disk       the node's declaration (name, identity, size_bytes, filesystem_uuid)
+    local_pv_facts      output of disk-facts.j2 for THIS node only (identity is node-scoped)
+    local_pv_mode       blank | adopt | verify
+    local_pv_node       node name
+    local_pv_mount_path where the disk is expected to be mounted
+    local_pv_require_confirmation / local_pv_typed_confirmation   (blank and adopt only)
+
+  blank   the disk must carry no signature at all. Reruns therefore cannot
+          reformat: once prepared, the disk has a signature and is refused.
+  adopt   an existing package filesystem; needs the recorded UUID, and the
+          typed confirmation names that UUID. A label alone proves nothing.
+  verify  read-only check of package-managed storage; same identity rules.
+-#}
+{%- set refusals = [] -%}
+{%- set facts = local_pv_facts -%}
+{%- set ident = local_pv_disk.identity | default({}, true) -%}
+{%- set mode = local_pv_mode | default('blank') -%}
+{%- set recorded = local_pv_disk.filesystem_uuid | default('', true) -%}
+{%- set attrs = [] -%}
+{%- for key in ['by_id', 'serial', 'wwn', 'scsi_hctl', 'vendor', 'model'] if (ident.get(key, '') or '') != '' -%}{%- set _ = attrs.append(key) -%}{%- endfor -%}
+{%- set cands = [] -%}
+{%- if attrs | length == 0 -%}
+  {%- set _ = refusals.append('no identity is declared for this disk') -%}
+{%- else -%}
+  {%- for dev in facts.devices | default([]) -%}
+    {%- set ok = namespace(v=true) -%}
+    {%- if (ident.get('by_id', '') or '') != '' and ident.by_id not in dev.by_id_links -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if (ident.get('serial', '') or '') != '' and ident.serial != dev.serial -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if (ident.get('wwn', '') or '') != '' and ident.wwn != dev.wwn -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if (ident.get('scsi_hctl', '') or '') != '' and ident.scsi_hctl != dev.hctl -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if (ident.get('vendor', '') or '') != '' and ident.vendor != dev.vendor -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if (ident.get('model', '') or '') != '' and ident.model != dev.model -%}{%- set ok.v = false -%}{%- endif -%}
+    {%- if ok.v -%}{%- set _ = cands.append(dev) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- if cands | length == 0 -%}
+    {%- set _ = refusals.append('no device on this node matches the declared identity') -%}
+  {%- elif cands | length > 1 -%}
+    {%- set _ = refusals.append('the declared identity is ambiguous: ' ~ (cands | length) ~ ' devices on this node match') -%}
+  {%- endif -%}
+{%- endif -%}
+{#- An unreadable or missing source is a refusal, never an empty (safe) result. -#}
+{%- for f in facts.probe_failures | default(['the facts carry no probe results']) -%}
+  {%- set _ = refusals.append('probe failed: ' ~ f) -%}
+{%- endfor -%}
+{%- if not (facts.root_known | default(false)) -%}
+  {%- for pr in facts.protected_problems | default([]) -%}
+    {%- set _ = refusals.append('protected-disk identification is incomplete: ' ~ pr) -%}
+  {%- endfor -%}
+  {%- if (facts.protected_problems | default([])) | length == 0 -%}
+    {%- set _ = refusals.append('protected-disk identification is incomplete: no result') -%}
+  {%- endif -%}
+{%- endif -%}
+{%- set need = ['lsblk', 'findmnt', 'wipefs', 'blkid', 'stat', 'df', 'awk', 'find', 'tr', 'sort', 'grep', 'tail', 'ls', 'basename', 'dirname'] -%}
+{%- if mode == 'blank' -%}
+  {%- set need = need + ['mkfs.ext4', 'mount', 'chattr', 'install'] -%}
+{%- elif mode == 'adopt' -%}
+  {%- set need = need + ['mount', 'chattr', 'install'] -%}
+{%- endif -%}
+{%- for t in need if not (facts.tools | default({})).get(t, false) -%}
+  {%- set _ = refusals.append('the required tool ' ~ t ~ ' is missing or was not reported on the node') -%}
+{%- endfor -%}
+{%- set target = none -%}
+{%- if cands | length == 1 -%}
+  {%- set dev = cands[0] -%}
+  {%- set target = dev -%}
+  {%- if dev.size != local_pv_disk.size_bytes -%}
+    {%- set _ = refusals.append('the device size ' ~ dev.size ~ ' differs from the declared size_bytes ' ~ local_pv_disk.size_bytes) -%}
+  {%- endif -%}
+  {%- for b in dev.blockers -%}
+    {%- if mode == 'blank' or b.code not in ['signature', 'mounted', 'fstab'] -%}
+      {%- set _ = refusals.append('the device ' ~ b.text) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set refs = [dev.path] + dev.by_id_links + (['UUID=' ~ dev.uuid] if dev.uuid != '' else []) + (['LABEL=' ~ dev.label] if dev.label != '' else []) -%}
+  {%- if mode == 'blank' -%}
+    {%- if recorded != '' -%}
+      {%- set _ = refusals.append('the inventory already records a filesystem UUID; blank preparation is refused (use adopt or verify)') -%}
+    {%- endif -%}
+    {%- for e in facts.fstab | default([]) if e.target == local_pv_mount_path -%}
+      {%- set _ = refusals.append('the mount point ' ~ local_pv_mount_path ~ ' is already claimed in /etc/fstab') -%}
+    {%- endfor -%}
+  {%- else -%}
+    {%- if recorded == '' -%}
+      {%- set _ = refusals.append('the recorded filesystem UUID is required for ' ~ mode) -%}
+    {%- else -%}
+      {%- if dev.fstype != 'ext4' -%}
+        {%- set _ = refusals.append('the device does not hold an ext4 filesystem') -%}
+      {%- endif -%}
+      {%- if dev.uuid != recorded -%}
+        {%- set _ = refusals.append('the filesystem UUID ' ~ (dev.uuid or 'none') ~ ' differs from the recorded UUID ' ~ recorded ~ ' (a label alone is not identity)') -%}
+      {%- endif -%}
+      {%- if dev.label != 'lpv-' ~ local_pv_disk.name -%}
+        {%- set _ = refusals.append('the filesystem label ' ~ (dev.label or 'none') ~ ' is not the expected lpv-' ~ local_pv_disk.name) -%}
+      {%- endif -%}
+      {%- if dev.signatures != 1 -%}
+        {%- set _ = refusals.append('the device carries ' ~ (dev.signatures if dev.signatures is not none else 'unknown') ~ ' signatures; exactly the one package filesystem is expected') -%}
+      {%- endif -%}
+    {%- endif -%}
+    {%- if mode == 'adopt' and dev.mountpoints | length > 0 and dev.mountpoints != [local_pv_mount_path] -%}
+      {%- set _ = refusals.append('the device is mounted somewhere other than ' ~ local_pv_mount_path) -%}
+    {%- elif mode == 'verify' and dev.mountpoints | length > 0 and dev.mountpoints != [local_pv_mount_path] -%}
+      {%- set _ = refusals.append('the device is mounted at ' ~ (dev.mountpoints | join(', ')) ~ ', not at ' ~ local_pv_mount_path) -%}
+    {%- endif -%}
+    {%- for e in facts.fstab | default([]) -%}
+      {%- if (e.source in refs or e.target == local_pv_mount_path) and not (e.source == 'UUID=' ~ recorded and e.target == local_pv_mount_path) -%}
+        {%- set _ = refusals.append('/etc/fstab has an entry (' ~ e.source ~ ' ' ~ e.target ~ ') that is not UUID=' ~ recorded ~ ' at ' ~ local_pv_mount_path) -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endif -%}
+{%- set confirmation = '' -%}
+{%- if target is not none -%}
+  {%- if mode == 'blank' -%}
+    {%- set confirmation = 'FORMAT ' ~ local_pv_node ~ ' ' ~ local_pv_disk.name ~ ' ' ~ target.path ~ ' ' ~ local_pv_disk.size_bytes -%}
+  {%- elif mode == 'adopt' -%}
+    {%- set confirmation = 'ADOPT ' ~ local_pv_node ~ ' ' ~ local_pv_disk.name ~ ' ' ~ target.path ~ ' ' ~ recorded -%}
+  {%- endif -%}
+{%- endif -%}
+{%- if local_pv_require_confirmation | default(false) and mode in ['blank', 'adopt'] -%}
+  {%- if confirmation == '' or (local_pv_typed_confirmation | default('') | trim) != confirmation -%}
+    {%- set _ = refusals.append('authorization is missing or does not name the verified disk (expected: ' ~ (confirmation or 'no verified target') ~ ')') -%}
+  {%- endif -%}
+{%- endif -%}
+{{ {'refusals': refusals, 'target': target, 'matches': cands | length, 'confirmation': confirmation} | to_json }}

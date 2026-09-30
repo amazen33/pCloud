@@ -9,7 +9,8 @@ working directory or Terraform state.
 | --- | --- | --- | --- | --- |
 | Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
-| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Storage and secrets packages are not designed yet |
+| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. A secrets package is not designed yet |
+| Storage | `02-storage/local-pv/` | Static local PersistentVolumes on a dedicated guest disk per node: read-only disk inspection, blank-disk preparation and package-disk adoption (typed authorization), verification, PV rendering; the `pcloud-local` StorageClass | `bash 02-storage/local-pv/tests/verify-local-pv.sh` (`--render` adds `kubectl kustomize` and kubeconform; run in CI) | **Implemented and tested offline only; not applied to any node or cluster.** The lab workers' disks are unverified and every example is synthetic. No replication, backup, snapshot or quota |
 | Layer 3 | `03-observability/` (planning [README](03-observability/README.md) only) | LGTM and OpenTelemetry Collector | None exists; synthetic logs, metrics, traces, service graph, access, retention and recovery tests required | **NOT IMPLEMENTED**; planned. No manifest or package; no pCloud Layer 3 installation has been verified |
 | Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
 
@@ -57,6 +58,9 @@ operation.
 3. **Layer 2 prerequisites:** install and test the chosen LoadBalancer,
    storage and secrets components as separate packages. `02-cluster-addons/` currently
    contains only kube-vip manifests; it does not install storage or a vault.
+   `02-storage/local-pv/` provides local persistent volumes (see its README); using
+   it needs the owner steps to verify each worker's SSH host key and disk, and
+   separately authorized formatting and apply steps, none of which has happened.
 4. **Layer 3 observability (not implemented):** install the Collector and
    LGTM stack before application instrumentation. Its future package must
    prove synthetic ingest/query, a service-graph edge, access controls,
@@ -98,8 +102,9 @@ exists.
 | --- | --- | --- | --- |
 | Layer 0 | A Windows Hyper-V host | VMs, network, inventory handover | Package merged |
 | Layer 1 | Ubuntu VMs and an inventory, from Layer 0 or any compatible provider | Kubernetes API and kubeconfig | Package merged |
-| Layer 2 | A working Kubernetes API | LoadBalancer addresses (kube-vip); storage and secrets packages are not designed | kube-vip installed in the lab |
-| Layer 3 | Installed profiles: a healthy cluster, exposure of services, and the storage and secret-management capabilities their design requires. External profile: supplied endpoints and credentials only | The observability capability contract (planned): ingest, query, dashboards, alerts | **NOT IMPLEMENTED**; the storage and secrets packages that installed profiles need are not designed |
+| Layer 2 | A working Kubernetes API | LoadBalancer addresses (kube-vip); a secrets package is not designed | kube-vip installed in the lab |
+| Storage | A working Kubernetes API, nodes with a verified, blank, dedicated disk, and verified SSH host keys | Node-pinned local volumes (`pcloud-local`); no replication, backup or quota | Implemented offline only; not applied; worker disks unverified |
+| Layer 3 | Installed profiles: a healthy cluster, exposure of services, and the storage and secret-management capabilities their design requires. External profile: supplied endpoints and credentials only | The observability capability contract (planned): ingest, query, dashboards, alerts | **NOT IMPLEMENTED**; installed profiles also need the storage phase applied (implemented offline only) and a secrets package (not designed) |
 | Platform services | Layers 0-3 or their equivalents | Kafka and APISIX packages | Planned |
 | Applications (IOT-EE) | The platform capabilities they consume, through versioned endpoints and configuration | IoT services with their own instrumentation and dashboards | Owned and released by IOT-EE |
 

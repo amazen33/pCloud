@@ -181,7 +181,12 @@ try {
     $unsafe = @($plan | Where-Object { $_.Mode -ne 'Smoke' -and -not $_.Planned -and ((@($_.Script) + @($_.Args)) -join ' ') -match $forbidden })
     Assert ($plan.Count -gt 0 -and $unsafe.Count -eq 0) 'no Static or Live command provisions, repairs or removes infrastructure'
     $live = @($plan | Where-Object { $_.Mode -eq 'Live' -and -not $_.Planned } | ForEach-Object { $_.Id } | Sort-Object)
-    Assert ($live -join ',' -eq 'l1-live-guard-cni,l1-live-health,l1-live-inventory') 'only the reviewed read-only Live checks are registered'
+    Assert ($live -join ',' -eq 'l1-live-guard-cni,l1-live-health,l1-live-inventory,s-live-check,s-live-inspect') 'only the reviewed read-only Live checks are registered'
+    $changesNodes = '(?i)prepare-disks|adopt-disks'
+    $reachable = @($plan | Where-Object { ((@($_.Script) + @($_.Args)) -join ' ') -match $changesNodes })
+    Assert ($reachable.Count -eq 0) 'no catalog entry runs the playbooks that format or mount disks'
+    $storageLive = @($plan | Where-Object { $_.Id -like 's-live-*' })
+    Assert ($storageLive.Count -eq 2 -and @($storageLive | Where-Object { (@($_.Args) -join ' ') -notmatch 'local_pv_report_dir=\{results\}' }).Count -eq 0) 'storage Live reports go to the results folder, not the package'
     $smoke = @($plan | Where-Object { $_.Mode -eq 'Smoke' -and -not $_.Planned })
     Assert ($smoke.Count -eq 0) 'no Smoke check is implemented yet'
     $l3 = @($plan | Where-Object { $_.Package -eq 'deploy/03-observability' })

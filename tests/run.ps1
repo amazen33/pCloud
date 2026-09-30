@@ -115,6 +115,23 @@ $BuiltInCatalog = @(
         Planned = 'tests/smoke.yaml is applied, checked and removed manually; no script exists'
         Description = 'Layer 2: a LoadBalancer Service receives a pool address and answers layer2-ok' }
 
+    # Storage phase. prepare-disks.yml and adopt-disks.yml change nodes (they format
+    # and mount) and are deliberately NOT registered here: only a person runs them.
+    @{ Id = 's-static'; Package = 'deploy/02-storage/local-pv'; Mode = 'Static'; Entry = $true; Runner = 'bash'
+        Script = 'tests/verify-local-pv.sh'; Needs = @('linux-bash', 'linux-ansible')
+        Description = 'Local PV storage: decisions, refusals, rendered volumes, mutating commands confined to one file' }
+    @{ Id = 's-live-inspect'; Package = 'deploy/02-storage/local-pv'; Mode = 'Live'; Runner = 'ansible'
+        Script = 'inspect-disks.yml'; Args = @('-i', 'inventory/hosts.yml', '-e', 'local_pv_report_dir={results}')
+        Needs = @('linux-ansible', 'file:inventory/hosts.yml')
+        Description = 'Local PV storage: read the disks of the nodes (read-only on nodes); report written to the results folder' }
+    @{ Id = 's-live-check'; Package = 'deploy/02-storage/local-pv'; Mode = 'Live'; Runner = 'ansible'
+        Script = 'check-storage.yml'; Args = @('-i', 'inventory/hosts.yml', '-e', 'local_pv_report_dir={results}')
+        Needs = @('linux-ansible', 'file:inventory/hosts.yml')
+        Description = 'Local PV storage: data mounts, filesystem UUIDs, markers, volume directories and free space (read-only on nodes; fails closed)' }
+    @{ Id = 's-smoke-bind'; Package = 'deploy/02-storage/local-pv'; Mode = 'Smoke'
+        Planned = 'binding a temporary claim, restarting its pod and reading the data back on a disposable disk is not implemented'
+        Description = 'Local PV storage: a claim binds on the right node, data survives a pod restart, an unmounted disk fails closed' }
+
     @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
         Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
         Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }

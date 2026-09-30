@@ -1,0 +1,73 @@
+---
+# SYNTHETIC EXAMPLE. Every address, identifier, size and UUID below is invented.
+# The worker disks of the real lab are still UNVERIFIED: nothing here was read
+# from them. The addresses are RFC 5737 documentation addresses, so no playbook
+# can reach a real machine with this file, and live runs reject it.
+#
+# To use it: copy to inventory/hosts.yml (git-ignored), replace the addresses,
+# and fill every disk from the report of inspect-disks.yml, in this order:
+#   1. identity and size_bytes come from the inspection of the REAL disk;
+#   2. filesystem_uuid stays empty until prepare-disks.yml (or adopt-disks.yml)
+#      has run; then record the UUID it reports;
+#   3. run check-storage.yml, and only then render-pvs.yml.
+all:
+  vars:
+    # Declares this file a synthetic example. It is the only kind of inventory for
+    # which the offline tests may skip verification stamps, and it is refused unless
+    # every node has a documentation address. Delete this line in a real inventory.
+    local_pv_synthetic: true
+  children:
+    local_pv_nodes:
+      vars:
+        ansible_user: iotee
+      hosts:
+        rke2-worker-01:
+          ansible_host: 192.0.2.21
+          local_pv:
+            disks:
+              - name: data-01
+                size_bytes: 21474836480          # SYNTHETIC: read the exact size from the inspection
+                identity:
+                  by_id: /dev/disk/by-id/scsi-SYNTHETIC-worker-01-data
+                filesystem_uuid: 11111111-2222-4333-8444-555555555551   # SYNTHETIC; empty before preparation
+                volumes:
+                  - name: lpv-rke2-worker-01-metrics
+                    subdir: metrics
+                    capacity_gib: 8
+                    owner_uid: 10001
+                    owner_gid: 10001
+                    mode: "0750"
+                    claim: {namespace: pcloud-observability, name: data-metrics-0}
+                  - name: lpv-rke2-worker-01-grafana
+                    subdir: grafana
+                    capacity_gib: 1
+                    owner_uid: 10002
+                    owner_gid: 10002
+                    mode: "0750"
+                    claim: {namespace: pcloud-observability, name: data-grafana-0}
+        rke2-worker-02:
+          ansible_host: 192.0.2.22
+          local_pv:
+            disks:
+              - name: data-01
+                size_bytes: 21474836480          # SYNTHETIC
+                # Deliberately the same invented identifier as worker-01: independent
+                # VM disks may share a guest identifier; identity is scoped to the node.
+                identity:
+                  by_id: /dev/disk/by-id/scsi-SYNTHETIC-worker-01-data
+                filesystem_uuid: 11111111-2222-4333-8444-555555555552   # SYNTHETIC
+                volumes:
+                  - name: lpv-rke2-worker-02-logs
+                    subdir: logs
+                    capacity_gib: 5
+                    owner_uid: 10003
+                    owner_gid: 10003
+                    mode: "0750"
+                    claim: {namespace: pcloud-observability, name: data-logs-0}
+                  - name: lpv-rke2-worker-02-traces
+                    subdir: traces
+                    capacity_gib: 5
+                    owner_uid: 10004
+                    owner_gid: 10004
+                    mode: "0750"
+                    claim: {namespace: pcloud-observability, name: data-traces-0}

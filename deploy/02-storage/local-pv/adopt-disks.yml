@@ -1,0 +1,35 @@
+---
+# ADOPTION of a disk that already holds the package filesystem (for example a
+# data disk re-attached to a replacement VM with the same node name). Never
+# formats. Needs the recorded filesystem UUID; a matching label alone is refused.
+# Explicit approval: you type ADOPT <node> <disk> <device> <uuid> after seeing
+# the plan (--check prints it and changes nothing).
+#
+#   ansible-playbook -i inventory/hosts.yml adopt-disks.yml --limit rke2-worker-01 --check
+#   ansible-playbook -i inventory/hosts.yml adopt-disks.yml --limit rke2-worker-01
+- name: Adopt existing package-managed local-PV disks on exactly one node
+  hosts: local_pv_nodes
+  gather_facts: false
+  become: true
+  vars:
+    local_pv_mode: adopt
+    local_pv_live: true
+    local_pv_uuid_rule: any
+  tasks:
+    - name: Refuse to run without --limit naming exactly one node
+      ansible.builtin.assert:
+        that:
+          - ansible_limit is defined
+          - ansible_play_hosts_all | length == 1
+        fail_msg: "Use --limit with exactly one node name; refusing to touch several nodes in one run."
+        quiet: true
+
+    - name: Validate the inventory (contacts no host)
+      ansible.builtin.include_tasks: tasks/validate-inventory.yml
+
+    - name: Process each disk declared for this node
+      ansible.builtin.include_tasks: tasks/process-disk.yml
+      loop: "{{ local_pv.disks }}"
+      loop_control:
+        loop_var: local_pv_disk
+        label: "{{ local_pv_disk.name }}"

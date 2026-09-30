@@ -1,0 +1,149 @@
+{#-
+  Pure: turns the probe output of tasks/gather-disk-facts.yml into one facts
+  document (JSON). It never contacts a host and it never treats a missing or
+  failed report as an empty, safe result: anything that failed, was not
+  reported, or was cut short becomes a probe failure or a device blocker.
+
+  Inputs (strings)
+    local_pv_raw_lsblk   lsblk -J -b -o NAME,PATH,TYPE,SIZE,RO,SERIAL,WWN,VENDOR,MODEL,HCTL,FSTYPE,UUID,LABEL,MOUNTPOINTS
+    local_pv_raw_probe   lines starting with "@":
+        @tool|<name>|ok|missing
+        @path|<path>|ok|<disk,disk,>   @path|<path>|absent|   @path|<path>|error|<reason>
+        @fstab|ok|fail|<reason>   @fstab_entry|<source> <target> ...
+        @swap|ok|fail|<reason>    @swapdev|<device>
+        @links|ok|fail|<reason>   @link|<link> <target>
+        @holders|<disk>|ok|<name,name,>   @holders|<disk>|fail|<reason>
+        @sig|<disk>|ok|<count>            @sig|<disk>|fail|<reason>
+        @disks|<n>   @end|ok
+-#}
+{%- set lsblk = local_pv_raw_lsblk | from_json -%}
+{%- set required_paths = ['/', '/boot', '/boot/efi', '/var/lib/rancher', '/var/lib/kubelet', '/var/lib/containerd'] -%}
+{%- set tools = {} -%}
+{%- set paths = {} -%}
+{%- set sections = {} -%}
+{%- set fstab = [] -%}
+{%- set swaps = [] -%}
+{%- set links = {} -%}
+{%- set holders = {} -%}
+{%- set sigs = {} -%}
+{%- set flags = namespace(end=false, disks=none) -%}
+{%- for line in local_pv_raw_probe.splitlines() if line.startswith('@') -%}
+  {%- set p = line[1:].split('|') -%}
+  {%- set kind = p[0] -%}
+  {%- set n = p | length -%}
+  {%- if kind == 'tool' and n >= 3 -%}
+    {%- set _ = tools.update({p[1]: p[2] == 'ok'}) -%}
+  {%- elif kind == 'path' and n >= 3 -%}
+    {%- set _ = paths.update({p[1]: {'status': p[2], 'disks': ((p[3] if n > 3 else '').split(',') | select | list) if p[2] == 'ok' else [], 'detail': (p[3] if n > 3 and p[2] != 'ok' else '')}}) -%}
+  {%- elif kind in ['fstab', 'swap', 'links'] and n >= 2 -%}
+    {%- set _ = sections.update({kind: {'status': p[1], 'detail': (p[2] if n > 2 else '')}}) -%}
+  {%- elif kind == 'fstab_entry' -%}
+    {%- set parts = line[13:].split() -%}
+    {%- if parts | length >= 2 -%}{%- set _ = fstab.append({'source': parts[0], 'target': parts[1]}) -%}{%- endif -%}
+  {%- elif kind == 'swapdev' and n >= 2 -%}
+    {%- set _ = swaps.append(p[1]) -%}
+  {%- elif kind == 'link' -%}
+    {%- set parts = line[6:].split(' ') -%}
+    {%- if parts | length >= 2 -%}
+      {%- set target = parts[1].split('/')[-1] -%}
+      {%- if target not in links -%}{%- set _ = links.update({target: []}) -%}{%- endif -%}
+      {%- set _ = links[target].append(parts[0]) -%}
+    {%- endif -%}
+  {%- elif kind == 'holders' and n >= 3 -%}
+    {%- set _ = holders.update({p[1]: {'status': p[2], 'names': ((p[3] if n > 3 else '').split(',') | select | list) if p[2] == 'ok' else [], 'detail': (p[3] if n > 3 and p[2] != 'ok' else '')}}) -%}
+  {%- elif kind == 'sig' and n >= 3 -%}
+    {%- set _ = sigs.update({p[1]: {'status': p[2], 'count': ((p[3] | int) if p[2] == 'ok' and n > 3 and p[3] is match('^[0-9]+$') else none), 'detail': (p[3] if n > 3 and p[2] != 'ok' else '')}}) -%}
+  {%- elif kind == 'disks' and n >= 2 and p[1] is match('^[0-9]+$') -%}
+    {%- set flags.disks = p[1] | int -%}
+  {%- elif kind == 'end' and n >= 2 -%}
+    {%- set flags.end = (p[1] == 'ok') -%}
+  {%- endif -%}
+{%- endfor -%}
+{#- ---- global probe failures: a source that failed or did not report ---- -#}
+{%- set failures = [] -%}
+{%- if not flags.end -%}
+  {%- set _ = failures.append('the probe output is incomplete: it has no end marker, so it was cut short') -%}
+{%- endif -%}
+{%- if flags.disks is none -%}
+  {%- set _ = failures.append('the probe did not report how many block devices it inspected') -%}
+{%- endif -%}
+{%- for name in ['fstab', 'swap', 'links'] -%}
+  {%- set s = sections.get(name, none) -%}
+  {%- if s is none -%}
+    {%- set _ = failures.append('the ' ~ name ~ ' probe did not report') -%}
+  {%- elif s.status != 'ok' -%}
+    {%- set _ = failures.append('the ' ~ name ~ ' probe failed: ' ~ (s.detail or 'no reason given')) -%}
+  {%- endif -%}
+{%- endfor -%}
+{#- ---- protected paths: each is judged on its own ---- -#}
+{%- set problems = [] -%}
+{%- set root_names = [] -%}
+{%- set inspected = [] -%}
+{%- for rp in required_paths -%}
+  {%- set e = paths.get(rp, none) -%}
+  {%- if e is none -%}
+    {%- set _ = problems.append(rp ~ ' was not inspected') -%}
+    {%- set _ = inspected.append({'path': rp, 'status': 'not inspected', 'disks': [], 'detail': ''}) -%}
+  {%- else -%}
+    {%- set _ = inspected.append({'path': rp, 'status': e.status, 'disks': e.disks, 'detail': e.detail}) -%}
+    {%- if e.status == 'ok' -%}
+      {%- if e.disks | length == 0 -%}
+        {%- set _ = problems.append(rp ~ ' was reported without a backing disk') -%}
+      {%- endif -%}
+      {%- for d in e.disks if d not in root_names -%}{%- set _ = root_names.append(d) -%}{%- endfor -%}
+    {%- elif e.status == 'absent' and rp != '/' -%}
+      {#- an optional path that genuinely is not there protects nothing -#}
+    {%- else -%}
+      {%- set _ = problems.append(rp ~ ' could not be inspected (' ~ e.status ~ (': ' ~ e.detail if e.detail else '') ~ ')') -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if problems | length == 0 and root_names | length == 0 -%}
+  {%- set _ = problems.append('no disk backing the OS or the RKE2 and container data was identified') -%}
+{%- endif -%}
+{#- ---- devices ---- -#}
+{%- set devices = [] -%}
+{%- for d in lsblk.blockdevices if d.type == 'disk' -%}
+  {%- set path = d.path | default('/dev/' ~ d.name, true) -%}
+  {%- set mounts = (d.mountpoints | default([], true)) | select | list -%}
+  {%- set hs = holders.get(d.name, none) -%}
+  {%- set sg = sigs.get(d.name, none) -%}
+  {%- set devlinks = links.get(d.name, []) -%}
+  {%- set uuid = d.uuid | default('', true) or '' -%}
+  {%- set label = d.label | default('', true) or '' -%}
+  {%- set fstype = d.fstype | default('', true) or '' -%}
+  {%- set refs = [path] + devlinks + (['UUID=' ~ uuid] if uuid != '' else []) + (['LABEL=' ~ label] if label != '' else []) -%}
+  {%- set fstab_targets = [] -%}
+  {%- for e in fstab if e.source in refs -%}{%- set _ = fstab_targets.append(e.target) -%}{%- endfor -%}
+  {%- set blockers = [] -%}
+  {%- if d.name in root_names -%}{%- set _ = blockers.append({'code': 'root', 'text': 'backs the root filesystem or RKE2 and container data'}) -%}{%- endif -%}
+  {%- if (d.children | default([], true)) | length > 0 -%}{%- set _ = blockers.append({'code': 'children', 'text': 'has partitions or child devices'}) -%}{%- endif -%}
+  {%- if hs is none -%}
+    {%- set _ = blockers.append({'code': 'probe', 'text': 'holders were not reported for this disk'}) -%}
+  {%- elif hs.status != 'ok' -%}
+    {%- set _ = blockers.append({'code': 'probe', 'text': 'holders could not be read (' ~ (hs.detail or 'failed') ~ ')'}) -%}
+  {%- elif hs.names | length > 0 -%}
+    {%- set _ = blockers.append({'code': 'holders', 'text': 'is held by other devices (LVM, md or device-mapper)'}) -%}
+  {%- endif -%}
+  {%- if mounts | length > 0 -%}{%- set _ = blockers.append({'code': 'mounted', 'text': 'is mounted at ' ~ (mounts | join(', '))}) -%}{%- endif -%}
+  {%- if path in swaps -%}{%- set _ = blockers.append({'code': 'swap', 'text': 'is in use as swap'}) -%}{%- endif -%}
+  {%- if fstab_targets | length > 0 -%}{%- set _ = blockers.append({'code': 'fstab', 'text': 'is referenced in /etc/fstab (' ~ (fstab_targets | join(', ')) ~ ')'}) -%}{%- endif -%}
+  {%- if (d.ro | string | lower) in ['true', '1'] -%}{%- set _ = blockers.append({'code': 'readonly', 'text': 'is read-only'}) -%}{%- endif -%}
+  {%- if sg is none -%}
+    {%- set _ = blockers.append({'code': 'probe', 'text': 'signature probe did not report for this disk'}) -%}
+  {%- elif sg.status != 'ok' or sg.count is none -%}
+    {%- set _ = blockers.append({'code': 'probe', 'text': 'signature probe failed (' ~ (sg.detail or 'no count') ~ ')'}) -%}
+  {%- elif sg.count > 0 or fstype != '' -%}
+    {%- set _ = blockers.append({'code': 'signature', 'text': 'carries a filesystem or other signature'}) -%}
+  {%- endif -%}
+  {%- set _ = devices.append({
+      'name': d.name, 'path': path, 'size': d.size | int,
+      'serial': (d.serial | default('', true) or '') | trim, 'wwn': (d.wwn | default('', true) or '') | trim,
+      'vendor': (d.vendor | default('', true) or '') | trim, 'model': (d.model | default('', true) or '') | trim,
+      'hctl': (d.hctl | default('', true) or '') | trim,
+      'fstype': fstype, 'uuid': uuid, 'label': label,
+      'mountpoints': mounts, 'holders': hs.names if hs is not none and hs.status == 'ok' else [],
+      'signatures': sg.count if sg is not none else none,
+      'by_id_links': devlinks, 'blockers': blockers}) -%}
+{%- endfor -%}
+{{ {'probe_failures': failures, 'tools': tools, 'protected_paths': inspected, 'protected_problems': problems, 'root_disk_names': root_names, 'root_known': problems | length == 0, 'fstab': fstab, 'swap': swaps, 'devices': devices} | to_json }}
