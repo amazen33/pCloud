@@ -6,10 +6,13 @@ self-contained: its own guest-disk preparation (Ansible), Kubernetes objects,
 configuration, tests and instructions. It reads nothing from Layer 1, Layer 2 or
 any other package, and never touches the RKE2 data directory.
 
-**Status: implemented and tested offline only. Not applied to any node or cluster.**
-The lab's worker disks are **unverified**: no identity, size or content of a
-worker disk has been read, and every disk in the examples is **SYNTHETIC**. No
-disk has been formatted or mounted by this package.
+**Status: offline checks pass; both Hyper-V lab worker disks were prepared and
+verified on 2026-09-30.** A temporary Kubernetes PVC and pod bound to worker-01,
+kept data across pod replacement, refused to start while the disk was unmounted,
+and recovered after remount. The test objects were removed; the StorageClass and
+PVs are not installed now. This is single-host lab evidence, not HA or production
+readiness. The committed inventory remains synthetic; the real inventory and
+verification reports are git-ignored on the lab controller.
 
 It provides node-pinned local storage. It does not provide replication, backup,
 snapshots, quotas or high availability, and a lost node or disk loses its data.
@@ -61,14 +64,16 @@ folder. It proves:
   configuration, and a real inventory cannot bypass that;
 - a failed `kubectl` or `kubeconform` fails the render check (controlled fake tools).
 
-It does **not** prove that formatting, mounting, `fstab` handling or the Kubernetes behaviour
-work on a real node. That needs an authorized test on a disposable disk (planned, not
-implemented).
+The offline test alone does **not** prove real-node or Kubernetes behaviour. The
+2026-09-30 authorized lab run below supplies real-node evidence for both workers
+and a Kubernetes binding smoke test for worker-01. It does not prove portability
+to another host or production durability.
 
 ## Verify the worker before touching it (owner steps)
 
 Host-key verification stays on; `ansible.cfg` sets `host_key_checking = True` and the tests
-fail if it is ever disabled. The workers' SSH host keys are not yet trusted.
+fail if it is ever disabled. For each new environment, verify the workers' SSH host
+keys before trusting them.
 
 1. An authorized person opens the worker's console (Hyper-V Manager, `vmconnect`) and prints the
    fingerprints: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256` (and the ecdsa and
@@ -178,13 +183,13 @@ what is actually established:
 
 | Layer | Established? |
 | --- | --- |
-| Each PV path is a **subdirectory** created after mounting, so an absent mount leaves no such path on the root filesystem | Design only. Whether the kubelet then refuses to start the pod, rather than creating the path, is **not verified**; it needs an authorized test on a disposable disk |
-| The empty mountpoint is made immutable (`chattr +i`) before mounting, so nothing can be created there while unmounted | Defense in depth only; not verified on a target and not re-checkable while mounted |
-| Marker files: `.pcloud-local-pv` on the filesystem and `.pcloud-volume` in each volume name the disk, UUID and node. A consumer should refuse to start unless its marker is present (an init container or probe) | The files are created and verified by `check-storage.yml`; the consumer-side check is a requirement for the Layer 3 package |
-| `check-storage.yml` and `render-pvs.yml`: an absent or wrong mount, or a UUID that is not the recorded one, fails verification, and rendering needs a passing stamp | Established offline by scenarios |
+| Each PV path is a **subdirectory** created after mounting, so an absent mount leaves no such path on the root filesystem | Verified on worker-01: kubelet reported `FailedMount` because the PV path did not exist; it did not create that path on the OS disk |
+| The empty mountpoint is made immutable (`chattr +i`) before mounting, so nothing can be created there while unmounted | The immutable attribute and absent volume subdirectory were observed while worker-01 was unmounted; protection on other hosts is unverified |
+| Marker files: `.pcloud-local-pv` on the filesystem and `.pcloud-volume` in each volume name the disk, UUID and node. A consumer should refuse to start unless its marker is present (an init container or probe) | Files were verified on both workers; the temporary worker-01 pod checked marker presence. A durable Layer 3 consumer-side check remains required |
+| `check-storage.yml` and `render-pvs.yml`: an absent or wrong mount, or a UUID that is not the recorded one, fails verification, and rendering needs a passing stamp | Established offline and on worker-01 with the mount deliberately absent; both workers passed after remount/reboot |
 | `nofail` in `/etc/fstab` keeps the node booting when the disk is missing | This is **availability, not protection**: a missing disk does not stop boot, so verification and monitoring must catch it |
 
-Do not rely on the first three layers until the authorized smoke test has shown the behaviour.
+The worker-01 smoke test establishes these behaviours in this lab only. Repeat the test for other platforms before relying on it there.
 
 ## Node loss and recovery
 
@@ -217,13 +222,33 @@ kubernetes/                         StorageClass
 tests/                              verify-local-pv.sh, check-logic.yml, scenarios.yml
 ```
 
+## Lab evidence (2026-09-30)
+
+- Host-side Hyper-V SCSI attachment and each guest's `0:0:0:1` path identified the
+  dedicated 20 GiB data VHDX; the protected OS/RKE2 disk was `sda`. Both worker
+  inspections reported zero signatures and no blockers on `sdb`, and check mode
+  changed nothing before each typed, one-node preparation.
+- Both data disks were formatted as ext4, mounted by their recorded UUIDs,
+  checked with `check-storage.yml`, rebooted one at a time, and checked again.
+  `/var/lib/rancher` and `/var/lib/kubelet` stayed on `/dev/sda1`; all three
+  Kubernetes nodes returned Ready. The UUIDs and passing stamps remain only in
+  the git-ignored lab inventory and reports.
+- The full two-worker inventory rendered four PVs from fresh stamps; the live
+  Kubernetes API accepted all four with `kubectl apply --dry-run=server`.
+- A temporary `pcloud-local` StorageClass, worker-01 PVs, PVC and restricted
+  BusyBox pod proved `Bound`/`Running`, an on-disk test file across pod
+  replacement, `FailedMount` with the data disk unmounted and no volume path
+  on the OS disk, then pod recovery after remount. The namespace, pod, PVC,
+  PVs, StorageClass and test file were removed. The final storage check passed.
+
 ## Limitations
 
-- Nothing here has run against a real disk, node or cluster. The worker disks are unverified.
-- Formatting, mounting and the Kubernetes runtime behaviour are untested; the offline tests
-  cover the decisions and the refusals.
-- Stable identifiers on the lab's Hyper-V disks are unknown; a WSL virtual machine on the same
-  host type exposes WWN-based links, which is only a hint.
+- This is one single-host Hyper-V/RKE2 lab run. Worker-02's Kubernetes binding
+  and missing-mount behaviour, other host types, upgrade/replacement and disk
+  loss recovery have not been tested live.
+- A transient SSH connectivity loss occurred during validation while Hyper-V
+  still reported all three VMs running; it recovered without a VM restart.
+  Its cause remains unknown, so this run does not establish network stability.
 - A verification stamp proves only that a check passed within the freshness window for that
   configuration; it does not watch the mount afterwards. Monitoring must.
 - The probe's tool and protected-path lists are fixed; a node layout they do not cover (for
