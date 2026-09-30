@@ -183,13 +183,37 @@ expect_fail "check-storage with an unmatched identity" "no device on this node m
 ansible-playbook -i "$LOCAL" inspect-disks.yml --limit rke2-worker-01 -e local_pv_report_dir="$WORK/inspect" >/dev/null 2>&1 || true
 report="$WORK/inspect/inspect-rke2-worker-01.json"
 [ -f "$report" ] || fail "inspect-disks.yml wrote no report: the real probe script did not run"
-if grep -E 'did not report|were not reported|is incomplete|no end marker' "$report"; then
-  fail "the real probe output is structurally incomplete on this machine"
-fi
-for tool in lsblk findmnt wipefs blkid; do
-  grep -q "\"$tool\": " "$report" || fail "the real probe did not report the tool $tool"
-done
-[ "$(grep -c '"path": "/' "$report")" -ge 6 ] || fail "the real probe did not inspect all six protected paths"
+python3 - "$report" <<'PY' || fail "the real probe output is structurally incomplete on this machine"
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    facts = json.load(source)
+
+required_paths = {
+    "/", "/boot", "/boot/efi", "/var/lib/rancher",
+    "/var/lib/kubelet", "/var/lib/containerd",
+}
+assert isinstance(facts.get("probe_failures"), list)
+assert not any(
+    "did not report" in failure or "incomplete" in failure or "no end marker" in failure
+    for failure in facts["probe_failures"]
+)
+tools = facts.get("tools")
+assert isinstance(tools, dict)
+assert all(isinstance(tools.get(name), bool) for name in ("lsblk", "findmnt", "wipefs", "blkid"))
+paths = facts.get("protected_paths")
+assert isinstance(paths, list)
+assert {entry["path"] for entry in paths} == required_paths
+assert all(entry["status"] in ("ok", "absent", "error") for entry in paths)
+devices = facts.get("devices")
+assert isinstance(devices, list)
+assert all(isinstance(device.get("blockers"), list) for device in devices)
+assert not any(
+    blocker["text"].startswith(("holders were not reported", "signature probe did not report"))
+    for device in devices for blocker in device["blockers"]
+)
+PY
 # The failure branches of the real probe script only run when something fails, so make
 # one tool fail (a stand-in that exits 2, first in PATH, for one run) and require the
 # report to say so instead of showing an empty, safe-looking result.
