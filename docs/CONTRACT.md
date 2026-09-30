@@ -99,7 +99,8 @@ without an explicit versioning decision.
 ## D. Phases and packages
 
 pCloud keeps `deploy/00-infra/private-hyperv/`,
-`deploy/01-k8s-engine/rke2-ansible/` and `deploy/02-cluster-addons/`.
+`deploy/01-k8s-engine/rke2-ansible/`, `deploy/02-cluster-addons/` and
+`deploy/02-storage/local-pv/` (the storage phase).
 Shared observability is planned under `deploy/03-observability/`; a planned
 directory is not proof of implementation. Deployment files and package
 tests stay together; root `tests/` holds repository-wide invariants.

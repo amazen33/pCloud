@@ -80,6 +80,10 @@ their checks are not implemented yet (see below).
 
 ## Prerequisites by platform
 
+The columns below describe the machine that runs the test commands. In this lab,
+WSL runs Ansible and SSH on the Windows host as the controller. The deployed Ubuntu
+RKE2 nodes are separate Hyper-V VMs; their OS and data disks belong to those VMs.
+
 | Checks | Windows | Linux (or WSL) |
 | --- | --- | --- |
 | Dispatcher | Windows PowerShell 5.1 or PowerShell 7 | PowerShell 7 (`pwsh`) |
@@ -87,6 +91,7 @@ their checks are not implemented yet (see below).
 | Layer 0 | Windows PowerShell 5.1 or PowerShell 7; `-Extended` needs `tofu` 1.6+ | PowerShell 7; `-Extended` needs `tofu` |
 | Layer 1 | **Only through WSL**: `wsl.exe` with a Linux distribution that has Bash and ansible-core. Windows PowerShell does not run Bash or Ansible itself; the dispatcher calls `wsl.exe -e bash -lc ...` and reports `SKIP` (prerequisite missing) when WSL or `ansible-playbook` inside it is not available | Bash and ansible-core (`python -m pip install ansible-core`) |
 | Layer 2 | Python 3.12+ and PyYAML 6.0.3; `-Extended` needs `kubectl` and `kubeconform` on PATH | Same |
+| Local PV storage | **Only through WSL**, like Layer 1: Bash and ansible-core inside the distribution | Bash and ansible-core |
 | Live checks | Layer 1 through WSL, with SSH access and trusted host keys inside the WSL distribution | SSH access and trusted host keys |
 
 ## Checks by deployment phase
@@ -103,7 +108,7 @@ would. Ids are what `-Check` and `-List` use.
 | `root-layout` | Static | `python tests/verify-layout.py` | One repository, no nested Git metadata, recovery material or tracked local state; each package test exists, is tracked and is run by CI; README test references resolve |
 | `root-layout-regressions` | Static | `python tests/test_verify_layout.py` | Each layout rejection, in throwaway repositories (48 tests) |
 
-The dispatcher's own tests, `tests/run.Tests.ps1` (39 cases), check
+The dispatcher's own tests, `tests/run.Tests.ps1` (41 cases), check
 selection including planned packages, exit codes, empty selections, launch
 failures, consent and the results location with stub checks, and list the
 real catalog to check its safety rules; CI runs them with PowerShell 7 on
@@ -139,6 +144,21 @@ Windows drive mounted in WSL.
 | `l2-static-render` | Static, extended | `python deploy/02-cluster-addons/tests/verify-layer2.py --render` | Adds `kubectl kustomize` and `kubeconform -strict` (Kubernetes 1.35.0 schemas) for the render and `tests/smoke.yaml` |
 | `l2-live-preflight` | Live | — | NOT IMPLEMENTED: the read-only `kubectl` preflight is a manual README procedure |
 | `l2-smoke-loadbalancer` | Smoke | — | NOT IMPLEMENTED: applying, checking and removing `tests/smoke.yaml` is a manual README procedure |
+
+### Storage: `deploy/02-storage/local-pv`
+
+| Id | Mode | Command | Proves |
+| --- | --- | --- | --- |
+| `s-static` | Static | `bash deploy/02-storage/local-pv/tests/verify-local-pv.sh` | Inventory, disk-selection, authorization, mount-verification and stamp rules (negative cases included: failed, unreported and truncated probes, partly inspected protected paths, missing tools, old, future-dated and mismatched stamps, a bypass attempt on a real inventory) through the same templates the playbooks use, from the raw text a node returns; the real `render-pvs.yml` run against stamps that are fresh, expired, future-dated, failed or made for a different configuration; every mutating command confined to one file that is skipped in check mode; the real playbooks refuse before any change; rendered PVs are Retain, node-pinned and marked capacity-unenforced; rendering needs a passing verification stamp; `--render` adds `kubectl kustomize` and `kubeconform -strict`, and the render check is shown to fail when either tool fails. Formats and mounts nothing |
+| `s-live-inspect` | Live | `ansible-playbook -i inventory/hosts.yml inspect-disks.yml -e local_pv_report_dir=<results>` | Reads each node's disks (identity, size, mounts, holders, signatures). Read-only on nodes; needs the git-ignored `inventory/hosts.yml` and trusted host keys. Not a way to establish trust: verify the host keys at the VM console first |
+| `s-live-check` | Live | `ansible-playbook -i inventory/hosts.yml check-storage.yml -e local_pv_report_dir=<results>` | Data mount, filesystem UUID, markers, volume directories and free space; fails closed. Read-only on nodes; writes its verification stamps to the results folder |
+| `s-smoke-bind` | Smoke | — | NOT IMPLEMENTED as a dispatcher check. Demonstrated manually on worker-01 on 2026-09-30: temporary claim binding, data across pod replacement, missing-mount refusal and recovery; see [package evidence](../deploy/02-storage/local-pv/README.md#lab-evidence-2026-09-30) |
+
+`prepare-disks.yml` and `adopt-disks.yml` format or mount disks. They are
+never run by the dispatcher (`tests/run.Tests.ps1` proves no catalog entry
+reaches them); only a person runs them, with the typed authorization the
+package README describes. The stamps `s-live-check` writes are what
+`render-pvs.yml` requires; a dispatcher run leaves them in its results folder.
 
 ### Layer 3: `deploy/03-observability` (planned)
 
@@ -192,6 +212,7 @@ each one runs; it does not go through the dispatcher.
 | `layout.yml` / `dispatcher-windows` | windows-latest | `tests/run.Tests.ps1` under Windows PowerShell 5.1 |
 | `infra.yml` / `layer0` | windows-latest | `deploy/00-infra/private-hyperv/tests/verify.ps1 -RunTofu` |
 | `infra.yml` / `ansible` | ubuntu-latest | `deploy/01-k8s-engine/rke2-ansible/tests/verify-layer1.sh`, from the package directory |
+| `infra.yml` / `storage` | ubuntu-latest | `deploy/02-storage/local-pv/tests/verify-local-pv.sh --render`, from the package directory |
 | `infra.yml` / `kubernetes` | ubuntu-latest | `python deploy/02-cluster-addons/tests/verify-layer2.py --render` |
 
 Before every push, run from the root `python tests/verify-layout.py`,

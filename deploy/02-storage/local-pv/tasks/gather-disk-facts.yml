@@ -1,0 +1,144 @@
+---
+# READ-ONLY. Every command here only reads, and each one also runs in check
+# mode. The probe script reports an explicit status for every source ("ok",
+# "absent" or "fail|reason"); templates/disk-facts.j2 turns anything that failed,
+# was not reported, or was cut short into a refusal. An unreadable source is
+# never an empty (safe) result.
+# Set local_pv_gather_mounts (and local_pv_disk, local_pv_mount_path) to also read
+# the data mount and the volume directories of one disk.
+- name: Read the block devices
+  ansible.builtin.command: >-
+    lsblk -J -b -o NAME,PATH,TYPE,SIZE,RO,SERIAL,WWN,VENDOR,MODEL,HCTL,FSTYPE,UUID,LABEL,MOUNTPOINTS
+  register: local_pv_lsblk_result
+  changed_when: false
+  check_mode: false
+
+- name: Probe tools, protected paths, fstab, swap, stable links, holders and signatures
+  ansible.builtin.shell: |
+    export LC_ALL=C
+    for t in {{ local_pv_probe_tools | join(' ') }}; do
+      if command -v "$t" >/dev/null 2>&1; then echo "@tool|$t|ok"; else echo "@tool|$t|missing"; fi
+    done
+    # Each protected path is inspected on its own. "absent" is reported only when
+    # the parent directory is searchable and the path really is not there.
+    for p in / /boot /boot/efi /var/lib/rancher /var/lib/kubelet /var/lib/containerd; do
+      if [ -e "$p" ]; then
+        if ! src=$(findmnt -n -o SOURCE --target "$p" 2>/dev/null); then echo "@path|$p|error|findmnt failed"; continue; fi
+        if [ -z "$src" ]; then echo "@path|$p|error|no source device"; continue; fi
+        if ! chain=$(lsblk -s -n -r -o NAME,TYPE "$src" 2>/dev/null); then echo "@path|$p|error|lsblk failed for $src"; continue; fi
+        disks=$(printf '%s\n' "$chain" | awk '$2=="disk"{print $1}' | sort -u | tr '\n' ',')
+        if [ -z "$disks" ]; then echo "@path|$p|error|no backing disk found for $src"; else echo "@path|$p|ok|$disks"; fi
+      elif [ -x "$(dirname "$p")" ]; then
+        echo "@path|$p|absent|"
+      else
+        echo "@path|$p|error|parent directory is not searchable"
+      fi
+    done
+    if [ ! -r /etc/fstab ]; then
+      echo "@fstab|fail|cannot read /etc/fstab"
+    else
+      out=$(grep -vE '^[[:space:]]*(#|$)' /etc/fstab); rc=$?
+      if [ "$rc" -le 1 ]; then
+        echo "@fstab|ok"
+        printf '%s\n' "$out" | while IFS= read -r l; do [ -n "$l" ] && echo "@fstab_entry|$l"; done
+      else
+        echo "@fstab|fail|grep exit $rc"
+      fi
+    fi
+    if [ -r /proc/swaps ]; then
+      echo "@swap|ok"
+      tail -n +2 /proc/swaps | awk '{print "@swapdev|"$1}'
+    else
+      echo "@swap|fail|cannot read /proc/swaps"
+    fi
+    links=ok
+    for d in /dev/disk/by-id /dev/disk/by-path; do
+      if [ -d "$d" ]; then
+        if out=$(find "$d" -maxdepth 1 -type l -printf '%p %l\n' 2>/dev/null); then
+          printf '%s\n' "$out" | while IFS= read -r l; do [ -n "$l" ] && echo "@link|$l"; done
+        else
+          links="fail|find failed in $d"
+        fi
+      elif [ -e "$d" ]; then
+        links="fail|$d exists but is not a directory"
+      fi
+    done
+    echo "@links|$links"
+    seen=0
+    for d in /sys/block/*; do
+      [ -e "$d" ] || break
+      n=$(basename "$d")
+      case "$n" in loop*|ram*|zram*|sr*|fd*) continue;; esac
+      seen=$((seen + 1))
+      if h=$(ls "$d/holders" 2>/dev/null); then
+        echo "@holders|$n|ok|$(printf '%s' "$h" | tr '\n' ',')"
+      else
+        echo "@holders|$n|fail|cannot read $d/holders"
+      fi
+      if s=$(wipefs --no-act --json -- "/dev/$n" 2>/dev/null) && printf '%s' "$s" | grep -q '"signatures"'; then
+        echo "@sig|$n|ok|$(printf '%s' "$s" | grep -c '"offset"')"
+      else
+        echo "@sig|$n|fail|wipefs did not report for /dev/$n"
+      fi
+    done
+    echo "@disks|$seen"
+    echo "@end|ok"
+  args:
+    executable: /bin/bash
+  register: local_pv_probe_result
+  changed_when: false
+  check_mode: false
+
+- name: Assemble the disk facts
+  ansible.builtin.set_fact:
+    local_pv_facts: "{{ lookup('ansible.builtin.template', 'disk-facts.j2') | from_json }}"
+  vars:
+    local_pv_raw_lsblk: "{{ local_pv_lsblk_result.stdout }}"
+    local_pv_raw_probe: "{{ local_pv_probe_result.stdout }}"
+
+- name: Read the data mount and volume directories of the disk
+  ansible.builtin.shell: |
+    export LC_ALL=C
+    M={{ local_pv_mount_path | quote }}
+    echo "root_dev=$(stat -c %d / 2>/dev/null)"
+    # findmnt exits 1 both for "no such mount" and for a failed invocation, so
+    # "not mounted" is only believed when findmnt demonstrably works (it finds /)
+    # and /proc/self/mounts, an independent source, agrees.
+    if ! findmnt -n --mountpoint / >/dev/null 2>&1; then
+      echo "probe_error=findmnt does not work on this node"
+    elif [ ! -r /proc/self/mounts ]; then
+      echo "probe_error=cannot read /proc/self/mounts"
+    else
+      if findmnt -n --mountpoint "$M" >/dev/null 2>&1; then a=1; else a=0; fi
+      if awk -v m="$M" '$2==m{f=1} END{exit f?0:1}' /proc/self/mounts; then b=1; else b=0; fi
+      if [ "$a" != "$b" ]; then
+        echo "probe_error=findmnt and /proc/self/mounts disagree about $M"
+      elif [ "$a" -eq 1 ]; then
+        src=$(findmnt -n -o SOURCE --mountpoint "$M" 2>/dev/null)
+        echo "mounted=yes"
+        echo "source=$src"
+        echo "fstype=$(findmnt -n -o FSTYPE --mountpoint "$M" 2>/dev/null)"
+        echo "options=$(findmnt -n -o OPTIONS --mountpoint "$M" 2>/dev/null)"
+        echo "mount_dev=$(stat -c %d "$M" 2>/dev/null)"
+        echo "uuid=$(blkid -p -s UUID -o value "$src" 2>/dev/null)"
+        echo "usage=$(df -B1 --output=size,used "$M" 2>/dev/null | tail -n 1 | tr -s ' ' | sed 's/^ //')"
+      else
+        echo "mounted=no"
+      fi
+    fi
+    if [ -f "$M/.pcloud-local-pv" ]; then echo "marker=$(tr '\n' ',' < "$M/.pcloud-local-pv")"; else echo "marker="; fi
+    {% for vol in local_pv_disk.volumes %}
+    D="$M"/{{ vol.subdir | quote }}
+    if [ -d "$D" ]; then
+      echo "vol|{{ vol.subdir }}|dir|$(stat -c '%d|%u|%g|%a' "$D" 2>/dev/null)|$([ -f "$D/.pcloud-volume" ] && tr '\n' ',' < "$D/.pcloud-volume")"
+    else
+      echo "vol|{{ vol.subdir }}|missing"
+    fi
+    {% endfor %}
+    echo "end=ok"
+  args:
+    executable: /bin/bash
+  register: local_pv_mount_result
+  changed_when: false
+  check_mode: false
+  when: local_pv_gather_mounts | default(false) | bool

@@ -1,0 +1,279 @@
+---
+# Offline tests of the safety decisions. Contacts no host and changes nothing.
+# Run by tests/verify-local-pv.sh after render-pvs.yml has rendered the example
+# into $LOCAL_PV_RENDER_DIR:
+#   ansible-playbook -i inventory/hosts.example.yml tests/check-logic.yml
+#
+# The decisions are pure templates; this playbook feeds tests/scenarios.yml to
+# the SAME templates the playbooks use, then checks the structural properties
+# that keep destructive tasks behind the guards.
+- name: Check the local-PV decision logic
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - scenarios.yml
+    - ../inventory/group_vars/all/main.yml
+  vars:
+    tpl: "{{ playbook_dir }}/../templates"
+    nl: "\n"
+    render_dir: "{{ lookup('ansible.builtin.env', 'LOCAL_PV_RENDER_DIR') }}"
+    passive_modules: [ansible.builtin.assert, ansible.builtin.set_fact, ansible.builtin.include_tasks, ansible.builtin.debug]
+    default_mount_root: /var/lib/pcloud/local-pv
+    fixed_now: 1800000000
+  tasks:
+    # ---- inventory rules, stamp binding, freshness and bypass ------------------------
+    # The stamp of a scenario is built with the SAME digest template the playbooks use,
+    # from the configuration it was "verified" for; the inventory under test is the
+    # configuration "now". So a changed field changes the digest the way it would live.
+    - name: Inventory rules and verification stamps
+      ansible.builtin.assert:
+        that:
+          - (inv_errors | length == 0) if item.expect == 'ok' else ((inv_errors | length > 0) and (item.expect in (inv_errors | join(' | '))))
+        fail_msg: "{{ item.name }}: expected '{{ item.expect }}', got {{ inv_errors }}"
+        quiet: true
+      vars:
+        local_pv_inventory: "{{ item.inventory }}"
+        local_pv_mount_root: "{{ item.mount_root | default(default_mount_root) }}"
+        local_pv_live: "{{ item.live | default(false) }}"
+        local_pv_uuid_rule: "{{ item.uuid_rule | default('any') }}"
+        local_pv_require_stamps: "{{ item.require_stamps | default(false) }}"
+        local_pv_synthetic: "{{ item.synthetic | default(false) }}"
+        local_pv_bypass_stamps: "{{ item.bypass | default(false) }}"
+        local_pv_stamp_max_age_hours: "{{ item.max_age_hours | default(24) }}"
+        local_pv_now_epoch: "{{ fixed_now }}"
+        local_pv_config_digests: "{{ lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': item.inventory}) | from_json }}"
+        verified_inventory: "{{ item.stamp.verified_inventory | default(item.inventory) }}"
+        verified_digests: "{{ lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': verified_inventory, 'local_pv_mount_root': item.stamp.verified_mount_root | default(default_mount_root)}) | from_json }}"
+        stamp_base:
+          passed: "{{ item.stamp.passed | default(true) }}"
+          filesystem_uuid: "{{ item.stamp.uuid | default(verified_inventory['rke2-worker-01'].disks[0].filesystem_uuid) }}"
+          config_digest: "{{ verified_digests['rke2-worker-01/data-01'] }}"
+        stamp_time: "{{ {} if item.stamp.omit_epoch | default(false) else {'checked_epoch': ((fixed_now | int) - ((item.stamp.age_hours | default(0)) * 3600)) | int} }}"
+        local_pv_stamps: "{{ {'rke2-worker-01/data-01': stamp_base | combine(stamp_time)} if item.stamp is defined else {} }}"
+        inv_errors: "{{ lookup('ansible.builtin.template', tpl ~ '/inventory-errors.j2') | from_json }}"
+      loop: "{{ inventory_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: The configuration digest ignores key order and changes with a covered field
+      ansible.builtin.assert:
+        that:
+          - digest_a == digest_b
+          - digest_a != digest_c
+        quiet: true
+      vars:
+        inv_a: {n1: {address: 10.0.0.1, disks: [{name: data-01, size_bytes: 1, identity: {by_id: /dev/disk/by-id/x, model: m}, volumes: [{name: a, subdir: a, owner_uid: 1, owner_gid: 2, mode: "0750"}, {name: b, subdir: b, owner_uid: 1, owner_gid: 2, mode: "0750"}]}]}}
+        inv_b: {n1: {disks: [{volumes: [{mode: "0750", owner_gid: 2, owner_uid: 1, subdir: b, name: b}, {subdir: a, name: a, mode: "0750", owner_gid: 2, owner_uid: 1}], identity: {model: m, by_id: /dev/disk/by-id/x}, size_bytes: 1, name: data-01}], address: 10.0.0.9}}
+        inv_c: {n1: {address: 10.0.0.1, disks: [{name: data-01, size_bytes: 1, identity: {by_id: /dev/disk/by-id/x, model: m}, volumes: [{name: a, subdir: a, owner_uid: 1, owner_gid: 2, mode: "0755"}, {name: b, subdir: b, owner_uid: 1, owner_gid: 2, mode: "0750"}]}]}}
+        digest_a: "{{ (lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': inv_a, 'local_pv_mount_root': default_mount_root}) | from_json)['n1/data-01'] }}"
+        digest_b: "{{ (lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': inv_b, 'local_pv_mount_root': default_mount_root}) | from_json)['n1/data-01'] }}"
+        digest_c: "{{ (lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': inv_c, 'local_pv_mount_root': default_mount_root}) | from_json)['n1/data-01'] }}"
+
+    # ---- disk selection: raw output -> facts -> decision ----------------------------
+    - name: Disk selection and typed authorization
+      ansible.builtin.assert:
+        that:
+          - (sel.refusals | length == 0) if item.expect == 'ok' else ((sel.refusals | length > 0) and (item.expect in (sel.refusals | join(' | '))))
+          - item.confirmation is not defined or sel.confirmation == item.confirmation
+        fail_msg: "{{ item.name }}: expected '{{ item.expect }}', got {{ sel.refusals }}"
+        quiet: true
+      vars:
+        local_pv_raw_lsblk: "{{ {'blockdevices': item.raw.lsblk} | to_json }}"
+        local_pv_raw_probe: "{{ probe_order | map('extract', probe_defaults | combine(item.raw.probe)) | list | flatten | join(nl) }}"
+        local_pv_facts: "{{ lookup('ansible.builtin.template', tpl ~ '/disk-facts.j2') | from_json }}"
+        local_pv_disk: "{{ item.disk }}"
+        local_pv_mode: "{{ item.mode }}"
+        local_pv_node: rke2-worker-01
+        local_pv_mount_path: /var/lib/pcloud/local-pv/data-01
+        local_pv_require_confirmation: "{{ item.confirm is defined }}"
+        local_pv_typed_confirmation: "{{ item.confirm | default('') }}"
+        sel: "{{ lookup('ansible.builtin.template', tpl ~ '/select-refusals.j2') | from_json }}"
+      loop: "{{ selection_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # ---- data mount verification: absent or wrong mounts fail closed ----------------
+    - name: Mount verification
+      ansible.builtin.assert:
+        that:
+          - (rep.failures | length == 0) if item.expect == 'ok' else ((rep.failures | length > 0) and (item.expect in (rep.failures | join(' | '))))
+          - item.warns is not defined or rep.warnings | length > 0
+        fail_msg: "{{ item.name }}: expected '{{ item.expect }}', got {{ rep.failures }} {{ rep.warnings }}"
+        quiet: true
+      vars:
+        local_pv_disk: "{{ item.disk }}"
+        local_pv_node: rke2-worker-01
+        local_pv_mount_path: /var/lib/pcloud/local-pv/data-01
+        local_pv_target_path: /dev/sdb
+        local_pv_raw_mount: "{{ item.lines | join(nl) }}"
+        rep: "{{ lookup('ansible.builtin.template', tpl ~ '/verify-report.j2') | from_json }}"
+      loop: "{{ mount_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # ---- rendered manifests -----------------------------------------------------------
+    - name: Read the rendered PersistentVolumes
+      ansible.builtin.set_fact:
+        rendered_pvs: "{{ (rendered_pvs | default([])) + (lookup('ansible.builtin.file', item) | from_yaml_all | select | list) }}"
+        rendered_files: "{{ (rendered_files | default([])) + [item | basename] }}"
+      loop: "{{ lookup('ansible.builtin.fileglob', render_dir ~ '/pv-*.yaml', wantlist=true) }}"
+
+    - name: The example renders four Retain, node-pinned, WaitForFirstConsumer-class volumes
+      ansible.builtin.assert:
+        that:
+          - rendered_pvs | length == 4
+          - rendered_pvs | map(attribute='metadata.name') | unique | list | length == 4
+          - item.kind == 'PersistentVolume'
+          - item.spec.persistentVolumeReclaimPolicy == 'Retain'
+          - item.spec.storageClassName == 'pcloud-local'
+          - item.spec.volumeMode == 'Filesystem'
+          - item.spec.accessModes == ['ReadWriteOnce']
+          - item.spec.capacity.storage is match('^[0-9]+Gi$')
+          - item.spec.local.path is match('^/var/lib/pcloud/local-pv/data-01/[a-z0-9-]+$')
+          - "'/var/lib/rancher' not in item.spec.local.path"
+          - item.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].key == 'kubernetes.io/hostname'
+          - item.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0]['values'] == [item.metadata.annotations['local-pv.pcloud/node']]
+          - item.metadata.annotations['local-pv.pcloud/capacity-enforced'] == 'false'
+          - item.spec.claimRef.namespace is defined
+        quiet: true
+      loop: "{{ rendered_pvs }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Synthetic renders are named so they cannot be applied by accident
+      ansible.builtin.assert:
+        that: rendered_files | select('search', 'SYNTHETIC-DO-NOT-APPLY') | list | length == rendered_files | length
+        quiet: true
+
+    - name: The StorageClass is static, waits for the consumer and retains
+      ansible.builtin.assert:
+        that:
+          - storage_class.kind == 'StorageClass'
+          - storage_class.provisioner == 'kubernetes.io/no-provisioner'
+          - storage_class.volumeBindingMode == 'WaitForFirstConsumer'
+          - storage_class.reclaimPolicy == 'Retain'
+          - storage_class.metadata.name == local_pv_storage_class
+          - "'storageclass.yaml' in kustomization.resources"
+        quiet: true
+      vars:
+        storage_class: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../kubernetes/storageclass.yaml') | from_yaml }}"
+        kustomization: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../kubernetes/kustomization.yaml') | from_yaml }}"
+
+    # ---- structure: nothing destructive can run before the guards ------------------------
+    - name: Read the task files that hold the guards
+      ansible.builtin.set_fact:
+        apply_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../tasks/apply-storage.yml') | from_yaml }}"
+        process_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../tasks/process-disk.yml') | from_yaml }}"
+        prepare_play: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../prepare-disks.yml') | from_yaml)[0] }}"
+        adopt_play: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../adopt-disks.yml') | from_yaml)[0] }}"
+
+    - name: Every non-passive task in apply-storage.yml is skipped in check mode
+      ansible.builtin.assert:
+        that: (item.keys() | intersect(passive_modules) | length > 0) or ('not ansible_check_mode' in (item.when | default('') | string))
+        fail_msg: "apply-storage.yml task '{{ item.name }}' would run in check mode"
+        quiet: true
+      loop: "{{ apply_tasks }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: apply-storage.yml starts by re-reading facts and re-running every guard
+      ansible.builtin.assert:
+        that:
+          - apply_tasks[0]['ansible.builtin.include_tasks'] == 'gather-disk-facts.yml'
+          - "'select-refusals.j2' in (apply_tasks[1]['ansible.builtin.set_fact'] | string)"
+          - "'ansible.builtin.assert' in apply_tasks[2]"
+          - apply_tasks[2]['ansible.builtin.assert'].that | string is search('refusals')
+        quiet: true
+
+    - name: In process-disk.yml the decision and its assert come before any apply
+      ansible.builtin.assert:
+        that:
+          - decision_at < refuse_at
+          - refuse_at < authorize_at
+        quiet: true
+      vars:
+        names: "{{ process_tasks | map(attribute='name') | list }}"
+        decision_at: "{{ names.index(names | select('search', 'decide whether this disk may be touched') | first) }}"
+        refuse_at: "{{ names.index(names | select('search', 'refuse an unsafe or unmatched target') | first) }}"
+        authorize_at: "{{ names.index(names | select('search', 'authorize, re-check, then change') | first) }}"
+
+    - name: The apply block runs only outside check mode, after authorization and a second decision
+      ansible.builtin.assert:
+        that:
+          - "'not ansible_check_mode' in (apply_block.when | string)"
+          - apply_block.block[0]['ansible.builtin.pause'] is defined
+          - apply_block.block[1]['ansible.builtin.set_fact'] is defined
+          - "'require_confirmation' in (apply_block.block[1].vars | string)"
+          - "'local_pv_prompt.user_input' in (apply_block.block[1].vars | string)"
+          - apply_block.block[2]['ansible.builtin.assert'] is defined
+          - apply_block.block[3]['ansible.builtin.include_tasks'] == 'apply-storage.yml'
+          - apply_block.block | length == 4
+        quiet: true
+      vars:
+        apply_block: "{{ process_tasks | selectattr('block', 'defined') | selectattr('name', 'search', 'authorize, re-check') | first }}"
+
+    - name: Blank preparation and adoption refuse without --limit naming one node, before anything else
+      ansible.builtin.assert:
+        that:
+          - item.tasks[0]['ansible.builtin.assert'].that == ['ansible_limit is defined', 'ansible_play_hosts_all | length == 1']
+          - item.tasks[1]['ansible.builtin.include_tasks'] == 'tasks/validate-inventory.yml'
+          - item.tasks[2]['ansible.builtin.include_tasks'] == 'tasks/process-disk.yml'
+        quiet: true
+      loop: "{{ [prepare_play, adopt_play] }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: The real verification writes its stamp through the shared stamp template
+      ansible.builtin.assert:
+        that:
+          - "'stamp.j2' in (verify_block.block | string)"
+          - "'config-digests.j2' in (verify_block.block | string)"
+          - "'local_pv_stamp | to_nice_json' in (verify_block.block | string)"
+        quiet: true
+      vars:
+        verify_block: "{{ process_tasks | selectattr('block', 'defined') | selectattr('name', 'search', 'verify package-managed storage') | first }}"
+
+    # ---- test stamps for the command-line render tests (only when the script asks) -----------
+    # They are built from the same shared templates as the real writer. The script uses
+    # them to run the REAL render-pvs.yml: valid, changed configuration, expired, bypass.
+    - name: Write test stamps for the example inventory
+      when: (lookup('ansible.builtin.env', 'LOCAL_PV_TEST_STAMPS_DIR') | default('', true)) != ''
+      tags: [stamps]
+      block:
+        - name: Assemble the example inventory the way tasks/validate-inventory.yml does
+          ansible.builtin.set_fact:
+            stamp_inventory: >-
+              {{ stamp_inventory | default({}) | combine({item: {
+                   'address': hostvars[item].ansible_host | default(''),
+                   'disks': (hostvars[item].local_pv | default({})).disks | default([]) }}) }}
+          loop: "{{ groups['local_pv_nodes'] }}"
+
+        - name: Create the stamp directory
+          ansible.builtin.file:
+            path: "{{ lookup('ansible.builtin.env', 'LOCAL_PV_TEST_STAMPS_DIR') }}"
+            state: directory
+            mode: "0755"
+
+        - name: Write one stamp per disk
+          ansible.builtin.copy:
+            dest: "{{ lookup('ansible.builtin.env', 'LOCAL_PV_TEST_STAMPS_DIR') }}/verified-{{ item.0.key }}-{{ item.1.name }}.json"
+            content: "{{ lookup('ansible.builtin.template', tpl ~ '/stamp.j2') | from_json | to_nice_json }}"
+            mode: "0644"
+          vars:
+            local_pv_node: "{{ item.0.key }}"
+            local_pv_disk: "{{ item.1 }}"
+            local_pv_mount_path: "{{ default_mount_root }}/{{ item.1.name }}"
+            local_pv_decision: {target: {path: /dev/sdb}}
+            local_pv_verdict: {failures: [], warnings: [], used_percent: 10}
+            local_pv_stamp_digest: "{{ (lookup('ansible.builtin.template', tpl ~ '/config-digests.j2', template_vars={'local_pv_digest_inventory': stamp_inventory, 'local_pv_mount_root': default_mount_root}) | from_json)[item.0.key ~ '/' ~ item.1.name] }}"
+            local_pv_now_epoch: "{{ (now(utc=true).timestamp() | int) - ((lookup('ansible.builtin.env', 'LOCAL_PV_TEST_STAMP_AGE_HOURS') | default('0', true) | float) * 3600) | int }}"
+            local_pv_now_utc: "{{ now(utc=true).isoformat() }}"
+          loop: "{{ stamp_inventory | dict2items | subelements('value.disks') }}"
+          loop_control:
+            label: "{{ item.0.key }}/{{ item.1.name }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "local-PV logic checks passed: {{ inventory_cases | length }} inventory, {{ selection_cases | length }} selection, {{ mount_cases | length }} mount scenarios; {{ rendered_pvs | length }} rendered volumes; guard order verified."

@@ -1,0 +1,145 @@
+---
+# THE ONLY FILE WITH TASKS THAT CHANGE A NODE. It is reached solely from
+# process-disk.yml, after every guard passed and the typed authorization
+# matched, and never in check mode (the include is skipped, and every task
+# here also carries `not ansible_check_mode`). Its first steps read the facts
+# again and re-run every guard, so a disk that changed in between is refused.
+# blank mode formats a disk that carries no signature at all; adopt mode never
+# formats. Nothing here deletes data.
+- name: Re-read the node's disk facts immediately before changing anything
+  ansible.builtin.include_tasks: gather-disk-facts.yml
+  vars:
+    local_pv_gather_mounts: false
+
+- name: Re-run every guard on the fresh facts
+  ansible.builtin.set_fact:
+    local_pv_decision: "{{ lookup('ansible.builtin.template', 'select-refusals.j2') | from_json }}"
+  vars:
+    local_pv_require_confirmation: true
+
+- name: Refuse if anything changed since the first decision
+  ansible.builtin.assert:
+    that: local_pv_decision.refusals | length == 0
+    fail_msg: "Refusing at the last check: {{ local_pv_decision.refusals | join('; ') }}"
+    quiet: true
+
+- name: Fix the values used below
+  ansible.builtin.set_fact:
+    local_pv_device: "{{ local_pv_decision.target.path }}"
+    local_pv_label: "lpv-{{ local_pv_disk.name }}"
+    local_pv_was_mounted: "{{ local_pv_decision.target.mountpoints | length > 0 }}"
+
+- name: Make the filesystem (blank preparation only; the disk carries no signature)
+  ansible.builtin.command:
+    argv: [mkfs.ext4, -F, -L, "{{ local_pv_label }}", -m, "{{ local_pv_fs_reserved_percent }}", --, "{{ local_pv_device }}"]
+  when: local_pv_mode == 'blank' and not ansible_check_mode
+  changed_when: true
+
+- name: Read the filesystem UUID (low-level probe, not the cache)
+  ansible.builtin.command: blkid -p -s UUID -o value -- {{ local_pv_device | quote }}
+  register: local_pv_uuid_result
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Check the UUID
+  ansible.builtin.assert:
+    that:
+      - local_pv_uuid_result.stdout | trim is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      - local_pv_mode != 'adopt' or local_pv_uuid_result.stdout | trim == local_pv_disk.filesystem_uuid
+    fail_msg: "The filesystem UUID is unreadable or differs from the recorded UUID."
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Create the mount point
+  ansible.builtin.file:
+    path: "{{ local_pv_mount_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not local_pv_was_mounted and not ansible_check_mode
+
+- name: Make the empty mount point immutable (defense in depth only; see README)
+  ansible.builtin.command: chattr +i -- {{ local_pv_mount_path | quote }}
+  when: not local_pv_was_mounted and not ansible_check_mode
+  register: local_pv_chattr
+  changed_when: local_pv_chattr.rc == 0
+  failed_when: false
+
+- name: Mount by filesystem UUID at boot (nofail keeps the node booting; it is not a protection)
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^UUID={{ local_pv_uuid_result.stdout | trim }}\s'
+    line: "UUID={{ local_pv_uuid_result.stdout | trim }} {{ local_pv_mount_path }} {{ local_pv_fs_type }} defaults,noatime,nofail 0 2"
+    state: present
+  when: not ansible_check_mode
+
+- name: Mount it now
+  ansible.builtin.command: mount -- {{ local_pv_mount_path | quote }}
+  when: not local_pv_was_mounted and not ansible_check_mode
+  changed_when: true
+
+- name: Confirm the mount comes from the recorded filesystem and is not the root filesystem
+  ansible.builtin.shell: |
+    set -e
+    [ "$(findmnt -n -o UUID --mountpoint {{ local_pv_mount_path | quote }})" = "{{ local_pv_uuid_result.stdout | trim }}" ]
+    [ "$(stat -c %d {{ local_pv_mount_path | quote }})" != "$(stat -c %d /)" ]
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Write the disk marker (kept if it already exists)
+  ansible.builtin.copy:
+    dest: "{{ local_pv_mount_path }}/.pcloud-local-pv"
+    content: "disk={{ local_pv_disk.name }}\nuuid={{ local_pv_uuid_result.stdout | trim }}\nnode={{ local_pv_node }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  when: not ansible_check_mode
+
+- name: Create each volume directory that does not exist (existing ones are left untouched)
+  ansible.builtin.command:
+    argv: [install, -d, -m, "{{ item.mode }}", -o, "{{ item.owner_uid }}", -g, "{{ item.owner_gid }}", --, "{{ local_pv_mount_path }}/{{ item.subdir }}"]
+    creates: "{{ local_pv_mount_path }}/{{ item.subdir }}"
+  loop: "{{ local_pv_disk.volumes }}"
+  loop_control:
+    label: "{{ item.subdir }}"
+  when: not ansible_check_mode
+
+- name: Write each volume marker (kept if it already exists)
+  ansible.builtin.copy:
+    dest: "{{ local_pv_mount_path }}/{{ item.subdir }}/.pcloud-volume"
+    content: "volume={{ item.name }}\ndisk={{ local_pv_disk.name }}\nuuid={{ local_pv_uuid_result.stdout | trim }}\n"
+    owner: "{{ item.owner_uid }}"
+    group: "{{ item.owner_gid }}"
+    mode: "0640"
+    force: false
+  loop: "{{ local_pv_disk.volumes }}"
+  loop_control:
+    label: "{{ item.subdir }}"
+  when: not ansible_check_mode
+
+- name: Make the report directory (controller)
+  ansible.builtin.file:
+    path: "{{ local_pv_report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  when: not ansible_check_mode
+
+- name: Record what was done (controller)
+  ansible.builtin.copy:
+    dest: "{{ local_pv_report_dir }}/{{ local_pv_mode }}-{{ local_pv_node }}-{{ local_pv_disk.name }}.json"
+    content: "{{ {'node': local_pv_node, 'disk': local_pv_disk.name, 'mode': local_pv_mode, 'device': local_pv_device, 'filesystem_uuid': local_pv_uuid_result.stdout | trim, 'mount_path': local_pv_mount_path, 'completed_utc': now(utc=true).isoformat()} | to_nice_json }}"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  when: not ansible_check_mode
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: "Record filesystem_uuid: {{ local_pv_uuid_result.stdout | trim }} for {{ local_pv_node }}/{{ local_pv_disk.name }} in the inventory, then run check-storage.yml."
+  when: not ansible_check_mode

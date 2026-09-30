@@ -1,0 +1,48 @@
+---
+# Committed defaults, loaded for every host of any inventory file in inventory/.
+# Site data (real addresses, disk identities, recorded UUIDs) goes in the
+# git-ignored inventory/hosts.yml, never here.
+
+# StorageClass created by kubernetes/storageclass.yaml and named by every PV.
+local_pv_storage_class: pcloud-local
+
+# Every managed disk is mounted at <local_pv_mount_root>/<disk name>. It must be
+# a package-owned directory below /var/lib/pcloud/, never /var/lib/rancher.
+local_pv_mount_root: /var/lib/pcloud/local-pv
+local_pv_fs_type: ext4
+
+# Capacity accounting. These are ESTIMATES used to keep declared ceilings
+# honest; nothing enforces them (see README, "Capacities are not quotas").
+local_pv_fs_overhead_percent: 3     # ext4 metadata and journal, not measured here
+local_pv_fs_reserved_percent: 1     # mkfs.ext4 -m
+local_pv_free_reserve_percent: 20   # policy: this share of usable space stays unallocated
+local_pv_min_disk_bytes: 4294967296
+
+# Verification thresholds (check-storage.yml). Critical fails the check.
+local_pv_warn_used_percent: 70
+local_pv_crit_used_percent: 85
+
+# Tools the node probe checks for (`command -v` only; nothing is run). A tool that is
+# missing or not reported refuses the disk: templates/select-refusals.j2 requires the
+# read-only ones in every mode, and mkfs.ext4, mount, chattr and install where a
+# mode changes the node (blank: all four; adopt: the last three).
+local_pv_probe_tools: [lsblk, findmnt, wipefs, blkid, stat, df, awk, find, tr, sort, grep, tail, ls, basename, dirname, mkfs.ext4, mount, chattr, install]
+
+# Freshness rule for verification stamps. render-pvs.yml accepts a stamp only if it
+# passed, was made for the current configuration (see templates/config-digests.j2),
+# and is no older than this. A stamp dated more than 5 minutes in the future is
+# refused as well. Rerun check-storage.yml to renew it.
+local_pv_stamp_max_age_hours: 24
+
+# RFC 5737 documentation ranges: the synthetic example inventory uses them, so
+# it can never reach a real machine. A live run rejects them.
+local_pv_documentation_prefixes:
+  - 192.0.2.
+  - 198.51.100.
+  - 203.0.113.
+
+# Where reports and rendered manifests go. Outside the repository is preferred:
+#   LOCAL_PV_REPORT_DIR / LOCAL_PV_RENDER_DIR, or -e local_pv_report_dir=...
+# The defaults are git-ignored folders inside this package.
+local_pv_report_dir: "{{ lookup('ansible.builtin.env', 'LOCAL_PV_REPORT_DIR') | default(playbook_dir ~ '/out/reports', true) }}"
+local_pv_render_dir: "{{ lookup('ansible.builtin.env', 'LOCAL_PV_RENDER_DIR') | default(playbook_dir ~ '/out/manifests', true) }}"

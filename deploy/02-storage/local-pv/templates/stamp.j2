@@ -1,0 +1,23 @@
+{#-
+  Pure: the verification stamp that check-storage.yml writes on the controller and
+  that inventory-errors.j2 checks before render-pvs.yml renders. One template
+  writes it, so writer and checker cannot disagree about the fields.
+
+  Inputs: local_pv_node, local_pv_disk, local_pv_mount_path, local_pv_decision
+  (target device), local_pv_verdict (failures, warnings, used_percent),
+  local_pv_stamp_digest (from config-digests.j2), local_pv_now_epoch, local_pv_now_utc
+-#}
+{{ {
+  'node': local_pv_node,
+  'disk': local_pv_disk.name,
+  'filesystem_uuid': local_pv_disk.filesystem_uuid,
+  'mount_path': local_pv_mount_path,
+  'device': local_pv_decision.target.path,
+  'config_digest': local_pv_stamp_digest,
+  'passed': local_pv_verdict.failures | length == 0,
+  'failures': local_pv_verdict.failures,
+  'warnings': local_pv_verdict.warnings,
+  'used_percent': local_pv_verdict.used_percent,
+  'checked_epoch': local_pv_now_epoch | int,
+  'checked_utc': local_pv_now_utc
+} | to_json }}

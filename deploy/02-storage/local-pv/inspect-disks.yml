@@ -1,0 +1,69 @@
+---
+# READ-ONLY inspection of the disks on the selected nodes. Run it after the
+# node's SSH host key has been verified against the VM console (README.md,
+# "Verify the worker before touching it"). It changes nothing on any node; it
+# writes a JSON report on the controller. Use the report to fill the disk's
+# identity and size_bytes in the inventory; it does not need a declared disk.
+#
+#   ansible-playbook -i inventory/hosts.yml inspect-disks.yml --limit rke2-worker-01
+#   ansible-playbook -i inventory/hosts.yml inspect-disks.yml -e local_pv_report_dir=/somewhere/outside/the/repo
+- name: Inspect the disks (read-only)
+  hosts: local_pv_nodes
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Refuse the synthetic documentation addresses (no real node)
+      ansible.builtin.assert:
+        that:
+          - ansible_host is defined
+          - ansible_host is not match('^(' ~ (local_pv_documentation_prefixes | map('regex_escape') | join('|')) ~ ')')
+        fail_msg: "{{ inventory_hostname }} has no real address; replace the synthetic example values first."
+        quiet: true
+
+    - name: Read the disk facts
+      ansible.builtin.include_tasks: tasks/gather-disk-facts.yml
+
+    - name: Show every whole disk and why it is or is not a safe target
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.path }} size={{ item.size }} serial={{ item.serial or '-' }} wwn={{ item.wwn or '-' }}
+          hctl={{ item.hctl or '-' }} vendor={{ item.vendor or '-' }} model={{ item.model or '-' }}
+          by-id={{ item.by_id_links | select('match', '/dev/disk/by-id/') | list }}
+          {{ 'blank and unmounted' if item.blockers | length == 0 else 'not a blank target: ' ~ (item.blockers | map(attribute='text') | join('; ')) }}
+      loop: "{{ local_pv_facts.devices }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Show how each protected path was inspected
+      ansible.builtin.debug:
+        msg: "{{ item.path }}: {{ item.status }}{{ ' on ' ~ (item.disks | join(',')) if item.disks | length > 0 else '' }}{{ ' (' ~ item.detail ~ ')' if item.detail else '' }}"
+      loop: "{{ local_pv_facts.protected_paths }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Make the report directory (controller)
+      ansible.builtin.file:
+        path: "{{ local_pv_report_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+
+    - name: Write the inspection report (controller)
+      ansible.builtin.copy:
+        dest: "{{ local_pv_report_dir }}/inspect-{{ inventory_hostname }}.json"
+        content: "{{ local_pv_facts | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if the inspection was incomplete (the report above is not a basis for an identity)
+      ansible.builtin.assert:
+        that:
+          - local_pv_facts.probe_failures | length == 0
+          - local_pv_facts.root_known
+        fail_msg: >-
+          The inspection of {{ inventory_hostname }} is incomplete:
+          {{ (local_pv_facts.probe_failures + local_pv_facts.protected_problems) | join('; ') }}.
+          Fix the node (missing tools, unreadable sources) and inspect again before using any of this.
+        quiet: true

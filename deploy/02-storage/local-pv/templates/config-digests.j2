@@ -1,0 +1,24 @@
+{#-
+  Pure: a SHA-256 digest, per "<node>/<disk>", of exactly the configuration that
+  check-storage.yml verifies on the node: the node, the disk's identity, size and
+  recorded filesystem UUID, the mount path, and each volume's name, subdirectory,
+  owner, group and mode. Capacity and claim names are not verified on the node, so
+  they are not part of it. Changing anything that is covered changes the digest,
+  which invalidates the verification stamp for that disk.
+
+  Inputs: local_pv_digest_inventory (node -> {address, disks[]}), local_pv_mount_root
+-#}
+{%- set out = {} -%}
+{%- for node, spec in local_pv_digest_inventory.items() -%}
+  {%- for disk in spec.disks | default([]) -%}
+    {#- tolerant of malformed input: validation reports the problems, not this template -#}
+    {%- set vols = [] -%}
+    {%- for v in disk.get('volumes', []) or [] -%}
+      {%- set _ = vols.append({'name': v.get('name', ''), 'subdir': v.get('subdir', ''), 'owner_uid': v.get('owner_uid', none), 'owner_gid': v.get('owner_gid', none), 'mode': (v.get('mode', '') | string)}) -%}
+    {%- endfor -%}
+    {%- set dname = disk.get('name', '') -%}
+    {%- set cfg = {'node': node, 'disk': dname, 'identity': disk.get('identity', {}) or {}, 'size_bytes': disk.get('size_bytes', none), 'filesystem_uuid': disk.get('filesystem_uuid', '') or '', 'mount_path': local_pv_mount_root ~ '/' ~ dname, 'volumes': vols | sort(attribute='name')} -%}
+    {%- set _ = out.update({node ~ '/' ~ dname: cfg | to_json(sort_keys=True) | hash('sha256')}) -%}
+  {%- endfor -%}
+{%- endfor -%}
+{{ out | to_json }}

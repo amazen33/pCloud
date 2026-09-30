@@ -1,0 +1,13 @@
+---
+# Static local volumes only: nothing provisions storage dynamically. The PVs
+# come from render-pvs.yml. Binding waits for the consuming pod so the volume
+# on the node that pod lands on is chosen. The class-level reclaim policy is
+# documentation; every rendered PV also sets Retain itself.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: pcloud-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: false

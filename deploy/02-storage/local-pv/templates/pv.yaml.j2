@@ -1,0 +1,42 @@
+{#- One PersistentVolume per declared volume of one node (input: local_pv_render_node). -#}
+{% set spec = local_pv_inventory[local_pv_render_node] %}
+{% for disk in spec.disks %}
+{% for vol in disk.volumes %}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ vol.name }}
+  labels:
+    app.kubernetes.io/managed-by: pcloud-local-pv
+  annotations:
+    local-pv.pcloud/node: "{{ local_pv_render_node }}"
+    local-pv.pcloud/disk: "{{ disk.name }}"
+    local-pv.pcloud/filesystem-uuid: "{{ disk.filesystem_uuid }}"
+    local-pv.pcloud/capacity-enforced: "false"
+    local-pv.pcloud/note: "capacity is a claim-matching ceiling on a shared filesystem; it is not a quota"
+spec:
+  capacity:
+    storage: {{ vol.capacity_gib }}Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ local_pv_storage_class }}
+  local:
+    path: {{ local_pv_mount_root }}/{{ disk.name }}/{{ vol.subdir }}
+{% if vol.claim is defined %}
+  claimRef:
+    namespace: {{ vol.claim.namespace }}
+    name: {{ vol.claim.name }}
+{% endif %}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ local_pv_render_node }}
+{% endfor %}
+{% endfor %}
