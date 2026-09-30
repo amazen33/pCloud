@@ -80,6 +80,10 @@ their checks are not implemented yet (see below).
 
 ## Prerequisites by platform
 
+The columns below describe the machine that runs the test commands. In this lab,
+WSL runs Ansible and SSH on the Windows host as the controller. The deployed Ubuntu
+RKE2 nodes are separate Hyper-V VMs; their OS and data disks belong to those VMs.
+
 | Checks | Windows | Linux (or WSL) |
 | --- | --- | --- |
 | Dispatcher | Windows PowerShell 5.1 or PowerShell 7 | PowerShell 7 (`pwsh`) |

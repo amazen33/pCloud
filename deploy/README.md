@@ -33,9 +33,10 @@ Hyper-V VMs and RKE2 `v1.35.7+rke2r1`: one control-plane node and two
 workers were Ready, API `/readyz` was healthy, and secrets encryption was
 enabled. This is evidence of the **earlier lab installation**, not a live
 test of the newly merged standalone packages. The running cluster uses Canal
-and RKE2's bundled ingress-nginx. Its 20 GiB secondary disks are unmounted;
-RKE2 data is on each OS disk. The new Layer 1 storage policy requires an
-explicit disk of at least 40 GiB and has not been run on these nodes.
+and RKE2's bundled ingress-nginx. On 2026-09-30, the local-PV package prepared,
+mounted and reboot-verified the two workers' 20 GiB secondary disks. RKE2 data
+remains on each OS disk. The new Layer 1 storage policy requires an explicit
+disk of at least 40 GiB and has not been run on these nodes.
 
 The lab is one physical Hyper-V host behind Windows NAT with one control
 plane. It has neither host nor control-plane high availability. Layer 2
