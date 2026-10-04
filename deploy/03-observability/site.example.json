@@ -1,0 +1,94 @@
+{
+  "profile": "lab",
+  "purpose": "platform",
+  "context": "replace-lab-context",
+  "namespace": "pcloud-observability",
+  "gateway_host": "observe.example.test",
+  "endpoint": "https://observe.example.test",
+  "ca_file": "/absolute/operator/observe-ca.pem",
+  "storage_class": "pcloud-local-retain",
+  "grafana_claim": "grafana-data",
+  "grafana_worker": "replace-worker-1",
+  "gateway_worker": "replace-worker-1",
+  "grafana_size_gib": 2,
+  "tls_secret": "observe-tls",
+  "access_secret": "observe-access",
+  "grafana_secret": "observe-grafana",
+  "alert_secret": "observe-alert",
+  "client_cidrs": [
+    "192.0.2.0/24"
+  ],
+  "alert_cidrs": [
+    "198.51.100.17/32"
+  ],
+  "alert_receiver": "https://alerts.example.test/pcloud-test",
+  "query_timeout_seconds": 90,
+  "soak_hours": 24,
+  "retention_hours": {
+    "logs": 24,
+    "traces": 24,
+    "metrics": 24
+  },
+  "resources": {
+    "loki": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "512Mi"
+      }
+    },
+    "tempo": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "512Mi"
+      }
+    },
+    "mimir": {
+      "requests": {
+        "cpu": "250m",
+        "memory": "512Mi"
+      },
+      "limits": {
+        "cpu": "1000m",
+        "memory": "1024Mi"
+      }
+    },
+    "grafana": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "256Mi"
+      }
+    },
+    "collector": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "256Mi"
+      }
+    },
+    "gateway": {
+      "requests": {
+        "cpu": "50m",
+        "memory": "64Mi"
+      },
+      "limits": {
+        "cpu": "200m",
+        "memory": "128Mi"
+      }
+    }
+  }
+}

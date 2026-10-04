@@ -38,6 +38,10 @@
     {
       "path": "deploy/02-cluster-addons/storage/observability-filesystem",
       "test": "tests/verify-backend.py"
+    },
+    {
+      "path": "deploy/03-observability",
+      "test": "tests/verify-observability.py"
     }
   ]
 }

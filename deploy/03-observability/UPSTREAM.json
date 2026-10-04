@@ -1,0 +1,84 @@
+{
+  "files": [
+    {
+      "path": "upstream/collector-otlphttp.md",
+      "source": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector/v0.161.0/exporter/otlphttpexporter/README.md",
+      "sha256": "7cb697fbd051a29481574e3bc118be6c7f6bb33b01544239ded9224db956016d"
+    },
+    {
+      "path": "upstream/collector-remotewrite.md",
+      "source": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-contrib/v0.161.0/exporter/prometheusremotewriteexporter/README.md",
+      "sha256": "8c9bac1aa1328364f6e39b3cc7318b4049bdf0fb0d2ed4fa2a8adb7c41bd4a8b"
+    },
+    {
+      "path": "upstream/collector-prometheus.md",
+      "source": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-contrib/v0.161.0/receiver/prometheusreceiver/README.md",
+      "sha256": "09d68c2f44d11e0098bd185119a4377f673465c624df178b302a0c07ab026905"
+    },
+    {
+      "path": "upstream/collector-components.yaml",
+      "source": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-releases/v0.161.0/distributions/otelcol-contrib/manifest.yaml",
+      "sha256": "55b3c798eed091ab2f256bf85651ce63573873d33c96ac5c98e36b5bd7c2412d"
+    },
+    {
+      "path": "upstream/collector-license",
+      "source": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector/v0.161.0/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "upstream/grafana-defaults.ini",
+      "source": "https://raw.githubusercontent.com/grafana/grafana/v13.2.3/conf/defaults.ini",
+      "sha256": "a15a22e349abca640437318e393a518d4ad4274e93f55095417e1eca2d654c93"
+    },
+    {
+      "path": "upstream/grafana-license",
+      "source": "https://raw.githubusercontent.com/grafana/grafana/v13.2.3/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/mimir-alertmanager.go",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/pkg/alertmanager/alertmanager.go",
+      "sha256": "7c43a0aa566e3b0b381b65a7c4e2ba0e6039493551a1f7b3b927850125f79dfc"
+    },
+    {
+      "path": "upstream/mimir-config.md",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/docs/sources/mimir/configure/configuration-parameters/index.md",
+      "sha256": "ce429a6c2d6ef68216154a2897b9e6098a410a53e5462c99fa01164aaf955ef5"
+    },
+    {
+      "path": "upstream/loki-config.md",
+      "source": "https://raw.githubusercontent.com/grafana/loki/v3.7.8/docs/sources/shared/configuration.md",
+      "sha256": "0f4ae72253c6e159bf4bb5b4be6a1c476304a8e3874e2bbe6e6517465b7fe58d"
+    },
+    {
+      "path": "upstream/loki-license",
+      "source": "https://raw.githubusercontent.com/grafana/loki/v3.7.8/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/tempo-license",
+      "source": "https://raw.githubusercontent.com/grafana/tempo/v2.10.8/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/mimir-license",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/nginx-license",
+      "source": "https://raw.githubusercontent.com/nginx/nginx/release-1.30.5/LICENSE",
+      "sha256": "08845fe39e06b51dad7685c28140ab49577a86e947523e16b536a46caf89ad5c"
+    },
+    {
+      "path": "upstream/mimir-modules.go",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/pkg/mimir/modules.go",
+      "sha256": "2254fbe1233af815e9379323c7195613a1767d70fa336405a4f30ca850f85f0a"
+    },
+    {
+      "path": "upstream/grafana-run.sh",
+      "source": "https://raw.githubusercontent.com/grafana/grafana/v13.2.3/packaging/docker/run.sh",
+      "sha256": "f82912b9620b76fd8c84b971ac99c600e4dee1fd4c8150e5d3411de773a430e2"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 This is the authoritative guide to testing pCloud. pCloud tests
 infrastructure functionality: host provisioning, the Kubernetes engine,
-cluster add-ons and, when implemented, the shared observability stack. It
+cluster add-ons and the implemented lab observability package. It
 does not test IOT-EE application behaviour; IOT-EE keeps its own tests in
 its own repository.
 
@@ -31,7 +31,7 @@ The default is Static mode for all packages. Useful options:
 | `-Package <path>` | Only this package, for example `deploy/02-cluster-addons` (`root` for the repository checks); comma-separated for several. Naming a planned package makes its checks required |
 | `-Check <id>` | Only these checks, by id (see `-List`); a named check is required even if it is extended |
 | `-Extended` | Also run the extended Static checks |
-| `-AllowClusterChanges` | Consent for Smoke checks, which create and remove temporary cluster resources |
+| `-AllowClusterChanges` | Consent for Smoke checks, which change isolated cluster resources or telemetry |
 | `-List` | Print the selected checks and how each would run; runs nothing |
 | `-ResultsDir <dir>` | Where to write results; must be outside the repository |
 
@@ -41,7 +41,7 @@ The default is Static mode for all packages. Useful options:
 | --- | --- | --- | --- |
 | **Static** (default) | No managed host or cluster | Nothing; temporary folders only | "Static" means no access to live infrastructure, not necessarily no network. The core checks need no network. `-Extended` adds `tofu init` (downloads the pinned OpenTofu providers) and `kubeconform` (downloads Kubernetes schemas) |
 | **Live** | An existing environment, read-only | Nothing on hosts or clusters; reports go to the results folder | Uses each package's git-ignored inputs, such as the real `inventory/hosts.ini`. A check is registered only after all of its tasks were confirmed read-only |
-| **Smoke** | An existing cluster | Temporary resources that the check creates and removes | Runs only with `-AllowClusterChanges`. Without it, nothing runs, the missing consent is reported and the run is incomplete |
+| **Smoke** | An existing cluster | Run-owned temporary resources/telemetry; storage additionally stops/restores its explicitly authorized isolated controller | Runs only with `-AllowClusterChanges` plus package review/isolation gates. Without consent nothing runs and the result is incomplete |
 | **All** | Static (extended), Live and Smoke | As above | Smoke still needs `-AllowClusterChanges`; All never makes Smoke changes silently |
 
 No mode provisions, repairs or removes infrastructure: the dispatcher never
@@ -63,7 +63,7 @@ Each check ends in one of:
 A selected check is *required*, except:
 
 - an extended check, unless `-Extended`, `-Mode All` or `-Check` selected it;
-- a check of a planned package (currently Layer 3), unless `-Package` or
+- a check of a future planned package, unless `-Package` or
   `-Check` names it. It is still listed as `NOT IMPLEMENTED (optional)`.
 
 The run result and exit code:
@@ -87,6 +87,7 @@ their checks are not implemented yet (see below).
 | Layer 0 | Windows PowerShell 5.1 or PowerShell 7; `-Extended` needs `tofu` 1.6+ | PowerShell 7; `-Extended` needs `tofu` |
 | Layer 1 | **Only through WSL**: `wsl.exe` with a Linux distribution that has Bash and ansible-core. Windows PowerShell does not run Bash or Ansible itself; the dispatcher calls `wsl.exe -e bash -lc ...` and reports `SKIP` (prerequisite missing) when WSL or `ansible-playbook` inside it is not available | Bash and ansible-core (`python -m pip install ansible-core`) |
 | Layer 2 | Python 3.12+ and PyYAML 6.0.3; `-Extended` needs `kubectl` and `kubeconform` on PATH | Same |
+| Layer 2 storage | Python 3.12+, `pip install -r deploy/02-cluster-addons/storage/local-path/requirements.txt`; Bash/Git Bash for helper tests; extended kubectl v1.35.0 / kubeconform v0.7.0; live explicit kubeconfig and trusted node SSH | Same |
 | Live checks | Layer 1 through WSL, with SSH access and trusted host keys inside the WSL distribution | SSH access and trusted host keys |
 
 ## Checks by deployment phase
@@ -101,9 +102,9 @@ would. Ids are what `-Check` and `-List` use.
 | Id | Mode | Command | Proves |
 | --- | --- | --- | --- |
 | `root-layout` | Static | `python tests/verify-layout.py` | One repository, no nested Git metadata, recovery material or tracked local state; each package test exists, is tracked and is run by CI; README test references resolve |
-| `root-layout-regressions` | Static | `python tests/test_verify_layout.py` | Each layout rejection and registered linked-worktree acceptance, in throwaway repositories (48 tests) |
+| `root-layout-regressions` | Static | `python tests/test_verify_layout.py` | Each layout rejection and verified registered-worktree acceptance, in throwaway repositories |
 
-The dispatcher's own tests, `tests/run.Tests.ps1` (39 cases), check
+The dispatcher's own tests, `tests/run.Tests.ps1`, check
 selection including planned packages, exit codes, empty selections, launch
 failures, consent and the results location with stub checks, and list the
 real catalog to check its safety rules; CI runs them with PowerShell 7 on
@@ -193,24 +194,27 @@ LGTM server or S3 service. Windows reports three POSIX fixture skips; run
 the same entry in Linux/WSL for full offline filesystem checks. Actual mounted
 Kubernetes and M4 API/recovery evidence remains separate.
 
-### Layer 3: `deploy/03-observability` (planned)
+### Layer 3: `deploy/03-observability`
 
-Layer 3 (LGTM and the OpenTelemetry Collector) is **planned; no package
-exists**. Its checks stay visible: Live, Smoke and All list them as
-`NOT IMPLEMENTED (optional)`. Naming the package or a check makes them
-required, so the run ends `INCOMPLETE` (exit 3):
+The standalone lab LGTM/Collector package has four implemented checks:
 
-```bash
-pwsh -NoProfile -File tests/run.ps1 -Mode All -Package deploy/03-observability
-```
-
-| Id | Mode | Planned proof |
+| ID | Mode | Scope |
 | --- | --- | --- |
-| `l3-live-observability` | Live | Synthetic log, metric and trace ingest and query; a service-graph edge; access controls; retention |
-| `l3-smoke-observability` | Smoke | Restart, failure isolation and rollback |
+| `l3-static-observability` | Static | Schemas, runtime/access/storage contracts, pins, copied package and simulated API acceptance |
+| `l3-static-render` | Static, extended | Real Kustomize and strict Kubernetes 1.35.0 schemas for all 28 resources |
+| `l3-live-observability` | Live | Read-only prerequisites, resource/config drift, trusted TLS, health/query authorization; remains INCOMPLETE |
+| `l3-smoke-observability` | Smoke | Explicitly reviewed separate conformance stack: bounded OTLP log/metric/trace writes, correlation/query, role denials, service graph and firing alert; remains INCOMPLETE |
 
-Static checks for Layer 3 will be added with its package. None of these
-checks may be described as passing until they are implemented and have run.
+The package consumes ignored explicit backend-capability/fragments exports,
+site/review inputs and role credentials from environment. Smoke rejects the
+platform purpose/namespace before any access, creates/deletes no Kubernetes
+resources and never changes retention. Data expires in its designated isolated
+installation; operator owns retained-PV disposition. Missing consent makes the
+run INCOMPLETE with zero writes. Actual receiver receipt, mounted-data recovery,
+policy enforcement, retention expiry, soak and rollback need separate evidence.
+Optional actual Linux executable exercises are documented in the
+[package README](../deploy/03-observability/README.md); they contact no cluster
+and are separate from ordinary CI checks.
 
 ## Results and evidence
 
@@ -245,7 +249,7 @@ each one runs; it does not go through the dispatcher.
 | `layout.yml` / `dispatcher-windows` | windows-latest | `tests/run.Tests.ps1` under Windows PowerShell 5.1 |
 | `infra.yml` / `layer0` | windows-latest | `deploy/00-infra/private-hyperv/tests/verify.ps1 -RunTofu` |
 | `infra.yml` / `ansible` | ubuntu-latest | `deploy/01-k8s-engine/rke2-ansible/tests/verify-layer1.sh`, from the package directory |
-| `infra.yml` / `kubernetes` | ubuntu-latest | `python deploy/02-cluster-addons/tests/verify-layer2.py --render` |
+| `infra.yml` / `kubernetes` | ubuntu-latest | kube-vip, local-path storage, OpenBao, observability-filesystem and Layer 3 package entry points, each with `--render` |
 
 Before every push, run from the root `python tests/verify-layout.py`,
 `python tests/test_verify_layout.py` and each changed package's test, or
@@ -271,6 +275,7 @@ pCloud will own a versioned platform capability specification (for example
 the observability endpoints Layer 3 provides). Consumers such as IOT-EE will
 select a version and supply endpoints through explicit environment
 configuration, never by reading this repository's files or state. The
-specification does not exist yet.
-
-The lab packages above run their own Static entry points with `--render` in the enabled `infra.yml` Kubernetes job. Pinned dependencies are in `tests/requirements.txt`; `tools/install-validation.sh` installs checksum-verified tools for Linux CI.
+observability package exports `pcloud.observability/v1` with endpoints, roles
+and explicit lab limits. Storage and secrets have their
+own package capability schemas, as does the observability filesystem handover;
+their export does not attest live acceptance.

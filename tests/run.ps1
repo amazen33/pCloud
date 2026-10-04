@@ -118,16 +118,13 @@ $BuiltInCatalog = @(
     @{ Id = 'storage-static'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Entry = $true; Runner = 'python'
         Script = 'tests/verify-storage.py'; Needs = @('python', 'pyyaml', 'jsonschema')
         Description = 'Storage: schema, lifecycle/path/security guards, source/image locks and copied-package independence' }
-
     @{ Id = 'storage-static-render'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Extended = $true; Runner = 'python'
         Script = 'tests/verify-storage.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
         Description = 'Storage: real local render, generated helper and restricted smoke Kubernetes schemas' }
-
     @{ Id = 'storage-live'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Live'; Runner = 'python'
         Script = 'storage.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/storage-live.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
         Description = 'Storage: read-only explicit-context API checks and trusted SSH mount/capacity inspection' }
-
     @{ Id = 'storage-smoke'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Smoke'; Runner = 'python'
         Script = 'storage.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--allow-controller-restart', '--output', '{results}/storage-smoke.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
@@ -136,16 +133,13 @@ $BuiltInCatalog = @(
     @{ Id = 'secrets-static'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Entry = $true; Runner = 'python'
         Script = 'tests/verify-secrets.py'; Needs = @('python', 'pyyaml', 'jsonschema')
         Description = 'Secrets: schema, source/image locks, credential/ownership guards, simulated lifecycle and ephemeral local TLS' }
-
     @{ Id = 'secrets-static-render'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Extended = $true; Runner = 'python'
         Script = 'tests/verify-secrets.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
         Description = 'Secrets: real Kustomize and Kubernetes 1.35.0 strict schemas for installed platform and recovery profiles' }
-
     @{ Id = 'secrets-live'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Live'; Runner = 'python'
         Script = 'bao.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/secrets-live.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'env:PCLOUD_BAO_TOKEN')
         Description = 'Secrets: read-only explicit-context installation, active TLS endpoint, KV v2, Kubernetes auth and HMAC audit checks' }
-
     @{ Id = 'secrets-smoke'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Smoke'; Runner = 'python'
         Script = 'bao.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/secrets-smoke.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json', 'env:PCLOUD_BAO_TOKEN')
@@ -154,27 +148,33 @@ $BuiltInCatalog = @(
     @{ Id = 'backend-static'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Entry = $true; Runner = 'python'
         Script = 'tests/verify-backend.py'; Needs = @('python', 'pyyaml', 'jsonschema')
         Description = 'Backend: schemas, supported fragments/locks, copied package and simulated lifecycle; Linux additionally runs real POSIX fixtures' }
-
     @{ Id = 'backend-static-render'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Extended = $true; Runner = 'python'
         Script = 'tests/verify-backend.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
         Description = 'Backend: real Kustomize/strict Kubernetes 1.35.0 schemas for claims and every restricted probe action; Windows reports POSIX skips' }
-
     @{ Id = 'backend-live'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Live'; Runner = 'python'
         Script = 'backend.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/backend-live.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
         Description = 'Backend: read-only class, worker, namespace/claim/volume identity and affinity checks; INCOMPLETE until POSIX/M4 acceptance' }
-
     @{ Id = 'backend-smoke'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Smoke'; Runner = 'python'
         Script = 'backend.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/backend-smoke.json')
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
         Description = 'Backend: isolated POSIX write/remount/UID denial, scoped cleanup and retained test PV inventory; operator disposition and M4 still required' }
 
-    @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
-        Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
-        Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }
-    @{ Id = 'l3-smoke-observability'; Package = 'deploy/03-observability'; Mode = 'Smoke'; PlannedPackage = $true
-        Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
-        Description = 'Layer 3: restart, failure isolation and rollback' }
+    @{ Id = 'l3-static-observability'; Package = 'deploy/03-observability'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-observability.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Layer 3: schemas, runtime contracts, access routes, copied package and simulated signal/graph/alert acceptance' }
+    @{ Id = 'l3-static-render'; Package = 'deploy/03-observability'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-observability.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Layer 3: real Kustomize and strict Kubernetes 1.35.0 schemas for all lab runtime resources' }
+    @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; Runner = 'python'
+        Script = 'observability.py'; Args = @('live', '--site', 'site.json', '--backend', 'backend-capability.json', '--fragments', 'backend-fragments.json', '--output', '{results}/observability-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:backend-capability.json', 'file:backend-fragments.json', 'env:PCLOUD_OBSERVE_INGEST', 'env:PCLOUD_OBSERVE_QUERY', 'env:PCLOUD_OBSERVE_ADMIN')
+        Description = 'Layer 3: read-only runtime drift/health, trusted TLS and query role denials; full acceptance remains INCOMPLETE' }
+    @{ Id = 'l3-smoke-observability'; Package = 'deploy/03-observability'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'observability.py'; Args = @('smoke', '--site', 'site.json', '--backend', 'backend-capability.json', '--fragments', 'backend-fragments.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/observability-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:backend-capability.json', 'file:backend-fragments.json', 'file:review.json', 'env:PCLOUD_OBSERVE_INGEST', 'env:PCLOUD_OBSERVE_QUERY', 'env:PCLOUD_OBSERVE_ADMIN')
+        Description = 'Layer 3: isolated reviewed test-stack OTLP ingest/query, correlation, service graph and firing alert; receiver/retention/recovery/soak still required' }
+
 )
 
 function Exit-Usage([string] $Message) {

@@ -1,0 +1,182 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api",
+    "profile",
+    "purpose",
+    "namespace",
+    "versions",
+    "artifact_sha256",
+    "protocol",
+    "endpoints",
+    "auth",
+    "retention_hours",
+    "collector",
+    "replication",
+    "backup",
+    "acceptance"
+  ],
+  "properties": {
+    "api": {
+      "const": "pcloud.observability/v1"
+    },
+    "profile": {
+      "const": "lab"
+    },
+    "purpose": {
+      "enum": [
+        "platform",
+        "conformance"
+      ]
+    },
+    "namespace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "versions": {
+      "const": {
+        "loki": "3.7.8",
+        "tempo": "2.10.8",
+        "mimir": "2.17.11",
+        "grafana": "13.2.3",
+        "collector": "0.161.0",
+        "gateway": "1.30.5-alpine"
+      }
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "protocol": {
+      "const": "OTLP/HTTP"
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ingest",
+        "logs",
+        "traces",
+        "metrics",
+        "grafana"
+      ],
+      "properties": {
+        "ingest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logs": {
+          "type": "string",
+          "minLength": 1
+        },
+        "traces": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metrics": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grafana": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "roles",
+        "type",
+        "grafana",
+        "tenant_isolation"
+      ],
+      "properties": {
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        },
+        "roles": {
+          "const": [
+            "ingest",
+            "query",
+            "admin"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grafana": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_isolation": {
+          "const": false
+        }
+      }
+    },
+    "retention_hours": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logs",
+        "traces",
+        "metrics"
+      ],
+      "properties": {
+        "logs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "traces": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "metrics": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persistent_queue",
+        "queue_batches_per_signal",
+        "retry_seconds",
+        "loss_on_restart_or_overflow"
+      ],
+      "properties": {
+        "persistent_queue": {
+          "const": false
+        },
+        "queue_batches_per_signal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retry_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "loss_on_restart_or_overflow": {
+          "const": true
+        }
+      }
+    },
+    "replication": {
+      "const": false
+    },
+    "backup": {
+      "const": false
+    },
+    "acceptance": {
+      "const": "live-signal-access-retention-alert-recovery-soak-and-rollback-required"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
