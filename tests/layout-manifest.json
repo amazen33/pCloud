@@ -30,6 +30,10 @@
     {
       "path": "deploy/02-cluster-addons/storage/local-path",
       "test": "tests/verify-storage.py"
+    },
+    {
+      "path": "deploy/02-cluster-addons/secrets/openbao",
+      "test": "tests/verify-secrets.py"
     }
   ]
 }
