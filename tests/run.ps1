@@ -151,6 +151,24 @@ $BuiltInCatalog = @(
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json', 'env:PCLOUD_BAO_TOKEN')
         Description = 'Secrets: run-owned KV rotation, scoped JWT/token denial and audit checks; remains INCOMPLETE until operator restart/restore evidence' }
 
+    @{ Id = 'backend-static'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-backend.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Backend: schemas, supported fragments/locks, copied package and simulated lifecycle; Linux additionally runs real POSIX fixtures' }
+
+    @{ Id = 'backend-static-render'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-backend.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Backend: real Kustomize/strict Kubernetes 1.35.0 schemas for claims and every restricted probe action; Windows reports POSIX skips' }
+
+    @{ Id = 'backend-live'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Live'; Runner = 'python'
+        Script = 'backend.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/backend-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
+        Description = 'Backend: read-only class, worker, namespace/claim/volume identity and affinity checks; INCOMPLETE until POSIX/M4 acceptance' }
+
+    @{ Id = 'backend-smoke'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'backend.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/backend-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
+        Description = 'Backend: isolated POSIX write/remount/UID denial, scoped cleanup and retained test PV inventory; operator disposition and M4 still required' }
+
     @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
         Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
         Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }

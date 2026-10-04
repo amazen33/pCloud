@@ -1,0 +1,16 @@
+{
+  "profile": "lab-filesystem",
+  "context": "replace-lab-context",
+  "namespace": "pcloud-observability",
+  "storage_class": "pcloud-local-retain",
+  "provisioner": "pcloud.io/local-path",
+  "max_total_gib": 16,
+  "minimum_free_bytes": 2147483648,
+  "minimum_free_inodes": 10000,
+  "reserve_fraction": 0.2,
+  "volumes": {
+    "loki": {"claim": "loki-data", "size_gib": 4, "worker": "replace-worker-1"},
+    "tempo": {"claim": "tempo-data", "size_gib": 4, "worker": "replace-worker-2"},
+    "mimir": {"claim": "mimir-data", "size_gib": 8, "worker": "replace-worker-2"}
+  }
+}

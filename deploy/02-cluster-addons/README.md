@@ -78,3 +78,4 @@ Layer 2 packages with independent implementation and acceptance boundaries; see 
 
 - [M3a lab filesystem storage](storage/local-path/README.md): locally validated; installation/live acceptance pending.
 - [M3b OpenBao secret management](secrets/openbao/README.md): locally validated; installation/live acceptance pending.
+- [M3c observability filesystem backend](storage/observability-filesystem/README.md): locally validated; installation/live acceptance pending.

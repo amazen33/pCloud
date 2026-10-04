@@ -177,6 +177,22 @@ Static checks do not execute OpenBao or contact a cluster. Bootstrap, sensitive
 export and force restore are separately guarded package commands, outside the
 dispatcher. The dispatcher never restarts this server or captures unseal keys.
 
+### Observability filesystem backend: `deploy/02-cluster-addons/storage/observability-filesystem`
+
+| Id | Mode | Proof |
+| --- | --- | --- |
+| `backend-static` | Static | Schemas, fragments/locks, copied package and simulated API lifecycle; real POSIX fixtures on Linux |
+| `backend-static-render` | Static / Extended | Real Kustomize and strict Kubernetes 1.35.0 schemas for permanent claims and all restricted probe actions |
+| `backend-live` | Live | Read-only class/workers/claim/volume identities, Retain and exclusive worker affinity; INCOMPLETE until filesystem/M4 acceptance |
+| `backend-smoke` | Smoke | Run-owned write/remount/UID-denial and cleanup; preserves PVs and records retained test-volume disposition as pending |
+
+See the [package](../deploy/02-cluster-addons/storage/observability-filesystem/README.md)
+for ignored inputs, reviewed source digest/revision, scope, permissions and
+recovery. No platform/supplied claim is mounted by the probe. It installs no
+LGTM server or S3 service. Windows reports three POSIX fixture skips; run
+the same entry in Linux/WSL for full offline filesystem checks. Actual mounted
+Kubernetes and M4 API/recovery evidence remains separate.
+
 ### Layer 3: `deploy/03-observability` (planned)
 
 Layer 3 (LGTM and the OpenTelemetry Collector) is **planned; no package

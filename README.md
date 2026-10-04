@@ -39,5 +39,6 @@ Only Layers 0-2 currently have implementation packages. Further observability, s
 
 - [M3a lab filesystem storage](deploy/02-cluster-addons/storage/local-path/README.md): implemented with local validation; deployment and live acceptance pending.
 - [M3b OpenBao secret management](deploy/02-cluster-addons/secrets/openbao/README.md): implemented with local validation; deployment and live acceptance pending.
+- [M3c observability filesystem backend](deploy/02-cluster-addons/storage/observability-filesystem/README.md): implemented with local validation; deployment and live acceptance pending.
 
 See [milestones](docs/MILESTONES.md). Crossplane remains deferred for this lab.
