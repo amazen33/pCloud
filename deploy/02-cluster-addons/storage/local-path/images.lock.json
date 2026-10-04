@@ -1,0 +1,14 @@
+{
+  "docker.io/rancher/local-path-provisioner:v0.0.37": {
+    "source": "docker.io/rancher/local-path-provisioner:v0.0.37",
+    "image": "docker.io/rancher/local-path-provisioner@sha256:e757967a5ec338f6a9b371c5a9688bedaa8c3578ea3dd4db329ea0084be0a86f",
+    "manifest_sha256": "sha256:e757967a5ec338f6a9b371c5a9688bedaa8c3578ea3dd4db329ea0084be0a86f",
+    "manifest_url": "https://registry-1.docker.io/v2/rancher/local-path-provisioner/manifests/v0.0.37"
+  },
+  "docker.io/library/busybox:1.37.0": {
+    "source": "docker.io/library/busybox:1.37.0",
+    "image": "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+    "manifest_sha256": "sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+    "manifest_url": "https://registry-1.docker.io/v2/library/busybox/manifests/1.37.0"
+  }
+}

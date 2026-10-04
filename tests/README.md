@@ -140,6 +140,25 @@ Windows drive mounted in WSL.
 | `l2-live-preflight` | Live | — | NOT IMPLEMENTED: the read-only `kubectl` preflight is a manual README procedure |
 | `l2-smoke-loadbalancer` | Smoke | — | NOT IMPLEMENTED: applying, checking and removing `tests/smoke.yaml` is a manual README procedure |
 
+### Layer 2 storage: `deploy/02-cluster-addons/storage/local-path`
+
+| Id | Mode | Package command | Proves |
+| --- | --- | --- | --- |
+| `storage-static` | Static | `python deploy/02-cluster-addons/storage/local-path/tests/verify-storage.py` | Locks/schema/path/ownership/security/consent guards, simulated lifecycle/error cleanup, standalone copying |
+| `storage-static-render` | Static, extended | Same entry with `--render` | Real local Kustomize and strict Kubernetes 1.35.0 schemas; tool versions checked |
+| `storage-live` | Live | `python storage.py live --site site.json` | Explicit-context installed/API checks plus read-only SSH mount/capacity probe |
+| `storage-smoke` | Smoke | `python storage.py smoke --site site.json --review review.json --allow-cluster-changes --allow-controller-restart` | Isolated synthetic data, controller stop/restore, retention/rebind, affinity/helper admission and scoped cleanup |
+
+The storage package's [README](../deploy/02-cluster-addons/storage/local-path/README.md)
+defines `site.json`, `review.json`, approved source digest/revision, scope,
+permissions and supplied-profile limitations. They remain ignored. A static
+pass is not live acceptance. Selecting this Smoke check with dispatcher
+consent explicitly authorizes controller stop/restore **only after** its
+independent digest/zero-consumer checks; it never stops a shared installation.
+Missing prerequisites yield INCOMPLETE, not PASS. Activate your Python
+virtual environment before using the dispatcher so its PATH selects the
+interpreter with the pinned dependencies.
+
 ### Layer 3: `deploy/03-observability` (planned)
 
 Layer 3 (LGTM and the OpenTelemetry Collector) is **planned; no package
@@ -219,3 +238,5 @@ the observability endpoints Layer 3 provides). Consumers such as IOT-EE will
 select a version and supply endpoints through explicit environment
 configuration, never by reading this repository's files or state. The
 specification does not exist yet.
+
+The lab packages above run their own Static entry points with `--render` in the enabled `infra.yml` Kubernetes job. Pinned dependencies are in `tests/requirements.txt`; `tools/install-validation.sh` installs checksum-verified tools for Linux CI.

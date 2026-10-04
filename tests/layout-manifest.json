@@ -26,6 +26,10 @@
     {
       "path": "deploy/02-cluster-addons",
       "test": "tests/verify-layer2.py"
+    },
+    {
+      "path": "deploy/02-cluster-addons/storage/local-path",
+      "test": "tests/verify-storage.py"
     }
   ]
 }

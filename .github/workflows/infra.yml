@@ -54,3 +54,5 @@ jobs:
         run: bash tools/install-validation.sh
       - name: Verify standalone Layer 2 package, render and schemas
         run: python deploy/02-cluster-addons/tests/verify-layer2.py --render
+      - name: Verify standalone lab storage, render and schemas
+        run: python deploy/02-cluster-addons/storage/local-path/tests/verify-storage.py --render

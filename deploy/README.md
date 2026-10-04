@@ -9,7 +9,7 @@ working directory or Terraform state.
 | --- | --- | --- | --- | --- |
 | Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
-| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Storage and secrets packages are not designed yet |
+| Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. See the implemented lab packages below for current storage/secrets status |
 | Layer 3 | `03-observability/` (planning [README](03-observability/README.md) only) | LGTM and OpenTelemetry Collector | None exists; synthetic logs, metrics, traces, service graph, access, retention and recovery tests required | **NOT IMPLEMENTED**; planned. No manifest or package; no pCloud Layer 3 installation has been verified |
 | Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
 
@@ -121,3 +121,9 @@ repository files, inventory or state.
 [The proposed ownership ADR](../docs/adr/XXXX-proposed-pcloud-iot-ee-ownership-and-observability-boundary.md)
 records how that applies to observability. The Layer 3 installation and the
 published capability contract remain planned.
+
+## Implemented lab packages
+
+- [M3a lab filesystem storage](02-cluster-addons/storage/local-path/README.md): independent package with static/render checks; no cluster deployment or live acceptance.
+
+See [milestones](../docs/MILESTONES.md) for the remaining acceptance gates.

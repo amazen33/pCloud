@@ -33,8 +33,10 @@ Each package can also be copied to another project and tested alone with the com
 
 For deployment prerequisites and the installation sequence, see [deploy/README.md](deploy/README.md) and each package README. Local state, credentials and real inventory must remain ignored. This reorganization does not apply any infrastructure changes.
 
-Only Layers 0-2 currently have implementation packages. Observability, storage, secrets, Kafka and APISIX remain planned; see the source evidence and limitations before making readiness claims.
+Only Layers 0-2 currently have implementation packages. Further observability, storage, secrets, Kafka and APISIX work follows the milestone tracker; see the source evidence and limitations before making readiness claims.
 
 ## Lab implementation progress
 
-Registered linked worktrees and tracked local configuration guards are validated. Pinned render-tool installation and safe native-process dispatch are available.
+- [M3a lab filesystem storage](deploy/02-cluster-addons/storage/local-path/README.md): implemented with local validation; deployment and live acceptance pending.
+
+See [milestones](docs/MILESTONES.md). Crossplane remains deferred for this lab.

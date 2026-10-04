@@ -72,4 +72,8 @@ Removing the controller while such Services are in use causes traffic loss.
 The cluster has one physical host and one control plane. The 2026-09-28
 LoadBalancer smoke test shows that this lab package works; it does not show
 production high availability or disaster recovery. Storage and secrets are separate
-Layer 2 packages still to be designed and tested.
+Layer 2 packages with independent implementation and acceptance boundaries; see below.
+
+## Additional implemented lab packages
+
+- [M3a lab filesystem storage](storage/local-path/README.md): locally validated; installation/live acceptance pending.
