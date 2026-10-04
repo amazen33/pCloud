@@ -52,7 +52,7 @@ BUNDLE_SUFFIXES = (".bundle",)
 TRACKED_FORBIDDEN = (
     "*.tfstate", "*.tfstate.*", "*.tfplan", "terraform.tfvars",
     "*.auto.tfvars", "*.auto.tfvars.json", ".env", ".env.*",
-    "hosts.ini", "kubeconfig", "*.kubeconfig",
+    "hosts.ini", "kubeconfig", "*.kubeconfig", "site.json", "review.json",
 )
 TRACKED_ALLOWED = ("*.example", "*.example.*")
 SCRIPT_REF = re.compile(r"[A-Za-z0-9_./-]*tests/[A-Za-z0-9_.-]+\.(?:py|sh|ps1)")
@@ -90,8 +90,26 @@ def check_repository_root(root: Path, errors: list[str]) -> bool:
     if top != root.resolve():
         errors.append(f"--root must be the repository top level; Git reports {top}")
         return False
-    if not (root / ".git").is_dir():
-        errors.append("root .git must be a directory, not a worktree pointer")
+    metadata = root / ".git"
+    if metadata.is_symlink():
+        errors.append("root .git must not be a symlink")
+    elif not metadata.is_dir():
+        # A registered linked worktree is one checkout of the same repository,
+        # not a nested repository. Reject arbitrary gitdir pointers and detached
+        # --separate-git-dir checkouts; verify Git's reciprocal registration.
+        try:
+            directory = Path(git(root, "rev-parse", "--absolute-git-dir").strip()).resolve()
+            common_raw = Path(git(root, "rev-parse", "--git-common-dir").strip())
+            common = (root / common_raw).resolve() if not common_raw.is_absolute() else common_raw.resolve()
+            pointer = metadata.read_text(encoding="utf-8").strip()
+            registrations = git(root, "worktree", "list", "--porcelain", "-z").split("\0")
+            registered = any(field.startswith("worktree ") and Path(field[9:]).resolve() == root.resolve() for field in registrations)
+            backref = Path((directory / "gitdir").read_text(encoding="utf-8").strip()).resolve()
+            if not (pointer.startswith("gitdir: ") and directory.parent == common / "worktrees"
+                    and common.is_dir() and common != directory and registered and backref == metadata.resolve()):
+                raise ValueError("invalid registration")
+        except (RuntimeError, OSError, ValueError):
+            errors.append("root .git pointer must identify a registered linked worktree")
     return True
 
 

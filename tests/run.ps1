@@ -11,7 +11,7 @@
             schemas), still without contacting any managed host or cluster.
     Live    Read-only checks against an existing environment, using each
             package's git-ignored inputs.
-    Smoke   Checks that create and remove temporary cluster resources. They
+    Smoke   Checks that change isolated cluster resources or telemetry. They
             run only with -AllowClusterChanges.
     All     Static (with -Extended), Live and Smoke. Smoke still needs
             -AllowClusterChanges; without it nothing is changed and the run
@@ -115,6 +115,7 @@ $BuiltInCatalog = @(
         Planned = 'tests/smoke.yaml is applied, checked and removed manually; no script exists'
         Description = 'Layer 2: a LoadBalancer Service receives a pool address and answers layer2-ok' }
 
+
     @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
         Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
         Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }
@@ -162,6 +163,55 @@ function Invoke-Native([string] $Exe, [string[]] $Arguments) {
     $ErrorActionPreference = 'Continue'
     $output = @(& $Exe @Arguments 2>&1 | ForEach-Object { ConvertTo-Line $_ })
     return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $output }
+}
+
+# Program checks must use CreateProcess, never Windows' application-chooser
+# fallback for invalid executables. Both output streams drain concurrently.
+function Invoke-Program([string] $Exe, [string[]] $Arguments) {
+    if ($onWindows) {
+        # Reject plain text disguised as .exe before Windows error handling
+        # can invoke an interactive file handler. Program means a PE binary;
+        # PowerShell and Bash scripts use their dedicated catalog runners.
+        $stream = [System.IO.File]::OpenRead($Exe)
+        $reader = New-Object System.IO.BinaryReader($stream)
+        try {
+            if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { throw 'invalid native executable header' }
+            $stream.Position = 0x3C
+            $offset = $reader.ReadInt32()
+            if ($offset -lt 64 -or $offset -gt $stream.Length - 4) { throw 'invalid native executable header' }
+            $stream.Position = $offset
+            if ($reader.ReadUInt32() -ne 0x4550) { throw 'invalid native executable header' }
+        }
+        finally { $reader.Dispose(); $stream.Dispose() }
+    }
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Exe
+    $start.WorkingDirectory = (Get-Location).Path
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    if ($start.PSObject.Properties['ArgumentList']) {
+        foreach ($word in $Arguments) { $start.ArgumentList.Add($word) }
+    }
+    else {
+        # Windows CommandLineToArgvW rules for .NET Framework / PowerShell 5.1.
+        $start.Arguments = (@($Arguments | ForEach-Object {
+            if ($_ -ne '' -and $_ -notmatch '[\s"]') { $_ }
+            else { '"' + ([regex]::Replace([regex]::Replace($_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1')) + '"' }
+        }) -join ' ')
+    }
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $start
+    try {
+        [void] $process.Start()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $lines = @(($stdout.Result + "`n" + $stderr.Result) -split '\r?\n' | Where-Object { $_ -ne '' })
+        return [pscustomobject]@{ Code = $process.ExitCode; Output = $lines }
+    }
+    finally { $process.Dispose() }
 }
 
 # --- repository, manifest and catalog ---------------------------------------------------
@@ -323,6 +373,10 @@ function Get-MissingNeed($C, [string] $Cwd) {
                 if (-not $probeCache.ContainsKey('pyyaml')) { $probeCache['pyyaml'] = (Find-Python) -and (Invoke-Native (Find-Python) @('-c', 'import yaml')).Code -eq 0 }
                 if (-not $probeCache['pyyaml']) { return 'prerequisite missing: PyYAML (python -m pip install PyYAML==6.0.3)' }
             }
+            'jsonschema' {
+                if (-not $probeCache.ContainsKey('jsonschema')) { $probeCache['jsonschema'] = (Find-Python) -and (Invoke-Native (Find-Python) @('-c', 'import jsonschema')).Code -eq 0 }
+                if (-not $probeCache['jsonschema']) { return 'prerequisite missing: jsonschema (python -m pip install jsonschema==4.25.1)' }
+            }
             'linux-bash' {
                 if ($onWindows) { if (-not (Test-WslCommand 'true')) { return 'prerequisite missing: Bash checks run on Linux or in WSL; wsl.exe with a Linux distribution was not found' } }
                 elseif (-not (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue)) { return 'prerequisite missing: bash' }
@@ -334,6 +388,9 @@ function Get-MissingNeed($C, [string] $Cwd) {
             'file:*' {
                 $relative = $need.Substring(5)
                 if (-not (Test-Path -LiteralPath (Join-Path $Cwd $relative))) { return "input missing: $relative (git-ignored; prepare it as the package README describes)" }
+            }
+            'env:*' {
+                if (-not [Environment]::GetEnvironmentVariable($need.Substring(4))) { return "input missing: $($need.Substring(4)) (operator environment; never a command argument)" }
             }
             default { if (-not (Get-Command $need -CommandType Application -ErrorAction SilentlyContinue)) { return "prerequisite missing: $need" } }
         }
@@ -395,7 +452,7 @@ foreach ($c in $selected) {
     Write-Host ''
     Write-Host "== $($c.Id) [$($c.Mode)] $($c.Package)"
     if ($c.Mode -eq 'Smoke' -and -not $AllowClusterChanges) {
-        $record.status = 'SKIP'; $record.reason = 'consent missing: Smoke creates cluster resources; add -AllowClusterChanges'
+        $record.status = 'SKIP'; $record.reason = 'consent missing: Smoke changes cluster resources or telemetry; add -AllowClusterChanges'
     }
     elseif (Get-Value $c 'Planned' '') {
         $record.status = 'NOT IMPLEMENTED'; $record.reason = $c.Planned
@@ -425,8 +482,15 @@ foreach ($c in $selected) {
                 $argv = @($command.Argv)
                 # A launch failure leaves no exit code; never read one left by an earlier check.
                 $global:LASTEXITCODE = $null
-                & $program.Source @argv 2>&1 | ForEach-Object { $line = ConvertTo-Line $_; $lines.Add($line); Write-Host "   | $line" }
-                $exitCode = $global:LASTEXITCODE
+                if ($c.Runner -eq 'program') {
+                    $executed = Invoke-Program $program.Source $argv
+                    foreach ($line in $executed.Output) { $lines.Add($line); Write-Host "   | $line" }
+                    $exitCode = $executed.Code
+                }
+                else {
+                    & $program.Source @argv 2>&1 | ForEach-Object { $line = ConvertTo-Line $_; $lines.Add($line); Write-Host "   | $line" }
+                    $exitCode = $global:LASTEXITCODE
+                }
                 if ($null -eq $exitCode) { throw "$($command.Exe) did not run to an exit code" }
                 $record.exitCode = $exitCode
                 $record.status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
@@ -465,7 +529,7 @@ foreach ($r in $records) {
 }
 if ($records.Count -eq 0) { Write-Host 'No checks match this selection; nothing was run.' }
 elseif ($executed.Count -eq 0) { Write-Host 'No check was executed.' }
-if ($smokeBlocked) { Write-Host 'Smoke checks were not run: they create cluster resources and need -AllowClusterChanges. Nothing was changed.' }
+if ($smokeBlocked) { Write-Host 'Smoke checks were not run: they change cluster resources or telemetry and need -AllowClusterChanges. Nothing was changed.' }
 Write-Host ("Result: {0} ({1} passed, {2} failed, {3} skipped, {4} not implemented; {5} required check(s) did not run)" -f `
         $verdict, (& $count 'PASS'), (& $count 'FAIL'), (& $count 'SKIP'), (& $count 'NOT IMPLEMENTED'), $notRun.Count)
 

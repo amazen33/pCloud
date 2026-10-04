@@ -101,7 +101,7 @@ would. Ids are what `-Check` and `-List` use.
 | Id | Mode | Command | Proves |
 | --- | --- | --- | --- |
 | `root-layout` | Static | `python tests/verify-layout.py` | One repository, no nested Git metadata, recovery material or tracked local state; each package test exists, is tracked and is run by CI; README test references resolve |
-| `root-layout-regressions` | Static | `python tests/test_verify_layout.py` | Each layout rejection, in throwaway repositories (48 tests) |
+| `root-layout-regressions` | Static | `python tests/test_verify_layout.py` | Each layout rejection and registered linked-worktree acceptance, in throwaway repositories (48 tests) |
 
 The dispatcher's own tests, `tests/run.Tests.ps1` (39 cases), check
 selection including planned packages, exit codes, empty selections, launch
