@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["contract_version", "profile", "storage_class", "provisioner", "volume_mode", "access_modes", "binding", "reclaim", "capacity_enforced", "replication", "snapshots", "backup", "expansion", "node_names", "component_version", "permanent_node_loss"],
+  "properties": {
+    "contract_version": {"const": "pcloud.storage/v1"},
+    "profile": {"enum": ["node-local-lab", "supplied-storage"]},
+    "storage_class": {"type": "string", "minLength": 1}, "provisioner": {"type": "string", "minLength": 1},
+    "volume_mode": {"const": "Filesystem"}, "access_modes": {"const": ["ReadWriteOnce"]},
+    "binding": {"const": "WaitForFirstConsumer"}, "reclaim": {"const": "Retain"},
+    "capacity_enforced": {"const": false}, "replication": {"const": false}, "snapshots": {"const": false},
+    "backup": {"const": false}, "expansion": {"const": false},
+    "node_names": {"type": "array", "items": {"type": "string"}},
+    "component_version": {"enum": ["v0.0.37", null]}, "permanent_node_loss": {"type": "string", "minLength": 1}
+  }
+}

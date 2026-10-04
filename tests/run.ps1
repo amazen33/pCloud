@@ -115,6 +115,23 @@ $BuiltInCatalog = @(
         Planned = 'tests/smoke.yaml is applied, checked and removed manually; no script exists'
         Description = 'Layer 2: a LoadBalancer Service receives a pool address and answers layer2-ok' }
 
+    @{ Id = 'storage-static'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-storage.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Storage: schema, lifecycle/path/security guards, source/image locks and copied-package independence' }
+
+    @{ Id = 'storage-static-render'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-storage.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Storage: real local render, generated helper and restricted smoke Kubernetes schemas' }
+
+    @{ Id = 'storage-live'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Live'; Runner = 'python'
+        Script = 'storage.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/storage-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
+        Description = 'Storage: read-only explicit-context API checks and trusted SSH mount/capacity inspection' }
+
+    @{ Id = 'storage-smoke'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'storage.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--allow-controller-restart', '--output', '{results}/storage-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
+        Description = 'Storage: isolated run-owned persistence, Retain/rebind, affinity, controller stop/restore and helper capture; operator review required' }
 
     @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
         Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
