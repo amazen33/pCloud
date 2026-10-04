@@ -159,6 +159,24 @@ Missing prerequisites yield INCOMPLETE, not PASS. Activate your Python
 virtual environment before using the dispatcher so its PATH selects the
 interpreter with the pinned dependencies.
 
+### Lab secrets: `deploy/02-cluster-addons/secrets/openbao`
+
+| Id | Mode | Proof |
+| --- | --- | --- |
+| `secrets-static` | Static | Package schemas, locks, scoped mutation/cleanup guards, copied-package execution, simulated API lifecycle and ephemeral localhost TLS |
+| `secrets-static-render` | Static / Extended | Real Kustomize and strict Kubernetes 1.35.0 schemas for platform/recovery manifests |
+| `secrets-live` | Live | Read-only explicit-context installation, TLS health, KV v2, Kubernetes auth and HMAC audit capabilities |
+| `secrets-smoke` | Smoke | Run-owned identity denial, CAS rotation, token revocation, installed audit and UID/ownership cleanup; INCOMPLETE pending operator restart and isolated restore |
+
+See the [package README](../deploy/02-cluster-addons/secrets/openbao/README.md)
+for ignored `site.json` / `review.json`, CA file, operator environment token
+`PCLOUD_BAO_TOKEN`, consent, permission scopes and the recovery runbook. Missing
+tokens are reported as missing inputs without printing their values. OpenSSL
+is required for offline TLS fixtures (Git for Windows supplies it on Windows).
+Static checks do not execute OpenBao or contact a cluster. Bootstrap, sensitive
+export and force restore are separately guarded package commands, outside the
+dispatcher. The dispatcher never restarts this server or captures unseal keys.
+
 ### Layer 3: `deploy/03-observability` (planned)
 
 Layer 3 (LGTM and the OpenTelemetry Collector) is **planned; no package

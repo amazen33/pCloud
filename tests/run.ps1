@@ -133,6 +133,24 @@ $BuiltInCatalog = @(
         Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
         Description = 'Storage: isolated run-owned persistence, Retain/rebind, affinity, controller stop/restore and helper capture; operator review required' }
 
+    @{ Id = 'secrets-static'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-secrets.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Secrets: schema, source/image locks, credential/ownership guards, simulated lifecycle and ephemeral local TLS' }
+
+    @{ Id = 'secrets-static-render'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-secrets.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Secrets: real Kustomize and Kubernetes 1.35.0 strict schemas for installed platform and recovery profiles' }
+
+    @{ Id = 'secrets-live'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Live'; Runner = 'python'
+        Script = 'bao.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/secrets-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'env:PCLOUD_BAO_TOKEN')
+        Description = 'Secrets: read-only explicit-context installation, active TLS endpoint, KV v2, Kubernetes auth and HMAC audit checks' }
+
+    @{ Id = 'secrets-smoke'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'bao.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/secrets-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json', 'env:PCLOUD_BAO_TOKEN')
+        Description = 'Secrets: run-owned KV rotation, scoped JWT/token denial and audit checks; remains INCOMPLETE until operator restart/restore evidence' }
+
     @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
         Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
         Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }

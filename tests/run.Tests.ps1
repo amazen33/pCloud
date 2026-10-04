@@ -212,11 +212,14 @@ try {
     $unsafe = @($plan | Where-Object { $_.Mode -ne 'Smoke' -and -not $_.Planned -and ((@($_.Script) + @($_.Args)) -join ' ') -match $forbidden })
     Assert ($plan.Count -gt 0 -and $unsafe.Count -eq 0) 'no Static or Live command provisions, repairs or removes infrastructure'
     $live = @($plan | Where-Object { $_.Mode -eq 'Live' -and -not $_.Planned } | ForEach-Object { $_.Id } | Sort-Object)
-    Assert ($live -join ',' -eq 'l1-live-guard-cni,l1-live-health,l1-live-inventory,storage-live') 'only the reviewed read-only Live checks are registered'
+    Assert ($live -join ',' -eq 'l1-live-guard-cni,l1-live-health,l1-live-inventory,secrets-live,storage-live') 'only the reviewed read-only Live checks are registered'
     $smoke = @($plan | Where-Object { $_.Mode -eq 'Smoke' -and -not $_.Planned })
-    Assert ($smoke.Count -eq 1 -and (@($smoke | ForEach-Object { $_.Id } | Sort-Object) -join ',') -eq 'storage-smoke') 'only reviewed package Smoke checks are implemented'
+    Assert ($smoke.Count -eq 2 -and (@($smoke | ForEach-Object { $_.Id } | Sort-Object) -join ',') -eq 'secrets-smoke,storage-smoke') 'only reviewed package Smoke checks are implemented'
     Assert ((@($smoke[0].Args) -contains '--allow-cluster-changes') -and (@($smoke[0].Args) -contains '--allow-controller-restart') -and
         (@($smoke[0].Needs) -contains 'file:review.json')) 'storage Smoke requires dispatcher consent and an explicit artifact review file'
+    $secretsSmoke = @($smoke | Where-Object { $_.Id -eq 'secrets-smoke' })[0]
+    Assert ((@($secretsSmoke.Args) -contains '--allow-cluster-changes') -and (@($secretsSmoke.Needs) -contains 'file:review.json') -and
+        (@($secretsSmoke.Needs) -contains 'env:PCLOUD_BAO_TOKEN')) 'secrets Smoke requires reviewed artifacts, consent and an operator environment token'
     $l3 = @($plan | Where-Object { $_.Package -eq 'deploy/03-observability' })
     Assert ($l3.Count -gt 0 -and @($l3 | Where-Object { -not $_.Planned }).Count -eq 0) 'every Layer 3 entry is NOT IMPLEMENTED'
     Assert (@($l3 | Where-Object { $_.Required }).Count -eq 0) 'Layer 3 is visible but optional in a default -Mode All selection'
