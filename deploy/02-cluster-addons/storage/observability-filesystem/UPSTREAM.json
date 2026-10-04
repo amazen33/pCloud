@@ -1,0 +1,54 @@
+{
+  "components": {
+    "loki": "3.7.8",
+    "tempo": "2.10.8",
+    "mimir": "2.17.11"
+  },
+  "files": [
+    {
+      "path": "upstream/loki-local.yaml",
+      "source": "https://raw.githubusercontent.com/grafana/loki/v3.7.8/cmd/loki/loki-local-config.yaml",
+      "sha256": "b0512247b74062a2df69acdd26f1292fb7750d41330b3ee34d36d7511456ef90"
+    },
+    {
+      "path": "upstream/loki-filesystem.md",
+      "source": "https://raw.githubusercontent.com/grafana/loki/v3.7.8/docs/sources/operations/storage/filesystem.md",
+      "sha256": "8c6a6c7e8dbbeeb5e7a8a06e1fe3ff36ed388ca6b7c3eee19667e722e35c33a2"
+    },
+    {
+      "path": "upstream/tempo-local.yaml",
+      "source": "https://raw.githubusercontent.com/grafana/tempo/v2.10.8/example/docker-compose/local/tempo.yaml",
+      "sha256": "4a4eeb55949c500309e184cd608c7edce08011b1687f30ccd3ccca9138a3b65b"
+    },
+    {
+      "path": "upstream/tempo-local.md",
+      "source": "https://raw.githubusercontent.com/grafana/tempo/v2.10.8/docs/sources/tempo/set-up-for-tracing/setup-tempo/test/test-monolithic-local.md",
+      "sha256": "297767a1d268419fbaa1d2b49bd52985a6c07e59260280fa1d8cb5c0eb5948a8"
+    },
+    {
+      "path": "upstream/mimir-demo.yaml",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/docs/configurations/demo.yaml",
+      "sha256": "a0824105b9e4c84fe75e57ffeec1ba2e3e784be276f300ee56abcc88beb005c4"
+    },
+    {
+      "path": "upstream/mimir-filesystem.go",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/pkg/storage/bucket/filesystem/config.go",
+      "sha256": "8c1adde2ce191cd16ac134043f713374cb0a12d20cf6c86406b511eb5e2ccf9b"
+    },
+    {
+      "path": "upstream/loki-LICENSE",
+      "source": "https://raw.githubusercontent.com/grafana/loki/v3.7.8/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/tempo-LICENSE",
+      "source": "https://raw.githubusercontent.com/grafana/tempo/v2.10.8/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "upstream/mimir-LICENSE",
+      "source": "https://raw.githubusercontent.com/grafana/mimir/mimir-2.17.11/LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    }
+  ]
+}

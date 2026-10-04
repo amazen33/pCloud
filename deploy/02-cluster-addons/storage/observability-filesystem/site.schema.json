@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["profile", "context", "namespace", "storage_class", "provisioner", "volumes", "max_total_gib", "minimum_free_bytes", "minimum_free_inodes", "reserve_fraction"],
+  "properties": {
+    "profile": {"enum": ["lab-filesystem", "supplied-filesystem"]},
+    "context": {"type": "string", "minLength": 1, "pattern": "^[^\\s]+$"},
+    "namespace": {"$ref": "#/$defs/name"}, "storage_class": {"$ref": "#/$defs/name"},
+    "provisioner": {"type": "string", "minLength": 1},
+    "max_total_gib": {"type": "integer", "minimum": 3, "maximum": 1024},
+    "minimum_free_bytes": {"type": "integer", "minimum": 2147483648},
+    "minimum_free_inodes": {"type": "integer", "minimum": 10000},
+    "reserve_fraction": {"type": "number", "minimum": 0.2, "maximum": 0.8},
+    "volumes": {"type": "object", "additionalProperties": false, "required": ["loki", "tempo", "mimir"], "properties": {
+      "loki": {"$ref": "#/$defs/volume"}, "tempo": {"$ref": "#/$defs/volume"}, "mimir": {"$ref": "#/$defs/volume"}
+    }}
+  },
+  "$defs": {
+    "name": {"type": "string", "maxLength": 63, "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
+    "volume": {"type": "object", "additionalProperties": false, "required": ["claim", "size_gib", "worker"], "properties": {
+      "claim": {"$ref": "#/$defs/name"}, "worker": {"$ref": "#/$defs/name"},
+      "size_gib": {"type": "integer", "minimum": 1, "maximum": 1024},
+      "uid": {"type": "string", "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"}
+    }}
+  }
+}

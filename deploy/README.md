@@ -126,5 +126,6 @@ published capability contract remain planned.
 
 - [M3a lab filesystem storage](02-cluster-addons/storage/local-path/README.md): independent package with static/render checks; no cluster deployment or live acceptance.
 - [M3b OpenBao secret management](02-cluster-addons/secrets/openbao/README.md): independent package with static/render checks; no cluster deployment or live acceptance.
+- [M3c observability filesystem backend](02-cluster-addons/storage/observability-filesystem/README.md): independent package with static/render checks; no cluster deployment or live acceptance.
 
 See [milestones](../docs/MILESTONES.md) for the remaining acceptance gates.

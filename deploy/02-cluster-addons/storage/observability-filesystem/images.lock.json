@@ -1,0 +1,8 @@
+{
+  "docker.io/library/python:3.14.8-alpine": {
+    "source": "docker.io/library/python:3.14.8-alpine",
+    "image": "docker.io/library/python@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+    "manifest_sha256": "sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+    "manifest_url": "https://registry-1.docker.io/v2/library/python/manifests/3.14.8-alpine"
+  }
+}

@@ -58,3 +58,5 @@ jobs:
         run: python deploy/02-cluster-addons/storage/local-path/tests/verify-storage.py --render
       - name: Verify standalone lab secrets, local TLS, render and schemas
         run: python deploy/02-cluster-addons/secrets/openbao/tests/verify-secrets.py --render
+      - name: Verify standalone observability filesystem, real POSIX, render and schemas
+        run: python deploy/02-cluster-addons/storage/observability-filesystem/tests/verify-backend.py --render

@@ -34,6 +34,10 @@
     {
       "path": "deploy/02-cluster-addons/secrets/openbao",
       "test": "tests/verify-secrets.py"
+    },
+    {
+      "path": "deploy/02-cluster-addons/storage/observability-filesystem",
+      "test": "tests/verify-backend.py"
     }
   ]
 }
