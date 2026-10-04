@@ -60,3 +60,5 @@ jobs:
         run: python deploy/02-cluster-addons/secrets/openbao/tests/verify-secrets.py --render
       - name: Verify standalone observability filesystem, real POSIX, render and schemas
         run: python deploy/02-cluster-addons/storage/observability-filesystem/tests/verify-backend.py --render
+      - name: Verify standalone lab observability, runtime contracts, render and schemas
+        run: python deploy/03-observability/tests/verify-observability.py --render

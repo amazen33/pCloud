@@ -1,0 +1,454 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "context",
+    "namespace",
+    "gateway_host",
+    "endpoint",
+    "ca_file",
+    "storage_class",
+    "grafana_claim",
+    "grafana_worker",
+    "gateway_worker",
+    "grafana_size_gib",
+    "tls_secret",
+    "access_secret",
+    "grafana_secret",
+    "alert_secret",
+    "client_cidrs",
+    "alert_cidrs",
+    "alert_receiver",
+    "query_timeout_seconds",
+    "soak_hours",
+    "retention_hours",
+    "resources"
+  ],
+  "properties": {
+    "profile": {
+      "const": "lab"
+    },
+    "purpose": {
+      "enum": [
+        "platform",
+        "conformance"
+      ]
+    },
+    "context": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "gateway_host": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+    },
+    "endpoint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "ca_file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "storage_class": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "grafana_claim": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "grafana_worker": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "gateway_worker": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "grafana_size_gib": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
+    "tls_secret": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "access_secret": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "grafana_secret": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "alert_secret": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,51}[a-z0-9]$"
+    },
+    "client_cidrs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    },
+    "alert_cidrs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    },
+    "alert_receiver": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "query_timeout_seconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 120
+    },
+    "soak_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 72
+    },
+    "retention_hours": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logs",
+        "traces",
+        "metrics"
+      ],
+      "properties": {
+        "logs": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 168
+        },
+        "traces": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 168
+        },
+        "metrics": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 168
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loki",
+        "tempo",
+        "mimir",
+        "grafana",
+        "collector",
+        "gateway"
+      ],
+      "properties": {
+        "loki": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        },
+        "tempo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        },
+        "mimir": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        },
+        "grafana": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        },
+        "collector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*m$"
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*Mi$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

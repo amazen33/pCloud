@@ -1,0 +1,39 @@
+{
+  "api": "pcloud.observability-backend/v1",
+  "profile": "lab-filesystem",
+  "namespace": "pcloud-observability",
+  "mount_path": "/var/lib/pcloud/observability",
+  "run_as_uid": 10001,
+  "run_as_group": 10001,
+  "fs_group": 10001,
+  "fs_group_change_policy": "OnRootMismatch",
+  "volumes": {
+    "loki": {
+      "claim": "loki-data",
+      "size_gib": 4,
+      "worker": "replace-worker-1"
+    },
+    "tempo": {
+      "claim": "tempo-data",
+      "size_gib": 4,
+      "worker": "replace-worker-2"
+    },
+    "mimir": {
+      "claim": "mimir-data",
+      "size_gib": 8,
+      "worker": "replace-worker-2"
+    }
+  },
+  "components": {
+    "loki": "3.7.8",
+    "tempo": "2.10.8",
+    "mimir": "2.17.11"
+  },
+  "fragments_sha256": "9d8851ffc32a1ba813363d4a842d08cd72dde28b97b489a5f94b2851e5e4b469",
+  "deployment_mode": "one-monolithic-instance-per-component",
+  "object_store_api": null,
+  "replication": false,
+  "backup": false,
+  "quota_enforced": false,
+  "acceptance": "filesystem-conformance-plus-M4-ingest-query-recovery-required"
+}

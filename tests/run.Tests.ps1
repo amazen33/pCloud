@@ -212,9 +212,9 @@ try {
     $unsafe = @($plan | Where-Object { $_.Mode -ne 'Smoke' -and -not $_.Planned -and ((@($_.Script) + @($_.Args)) -join ' ') -match $forbidden })
     Assert ($plan.Count -gt 0 -and $unsafe.Count -eq 0) 'no Static or Live command provisions, repairs or removes infrastructure'
     $live = @($plan | Where-Object { $_.Mode -eq 'Live' -and -not $_.Planned } | ForEach-Object { $_.Id } | Sort-Object)
-    Assert ($live -join ',' -eq 'backend-live,l1-live-guard-cni,l1-live-health,l1-live-inventory,secrets-live,storage-live') 'only the reviewed read-only Live checks are registered'
+    Assert ($live -join ',' -eq 'backend-live,l1-live-guard-cni,l1-live-health,l1-live-inventory,l3-live-observability,secrets-live,storage-live') 'only the reviewed read-only Live checks are registered'
     $smoke = @($plan | Where-Object { $_.Mode -eq 'Smoke' -and -not $_.Planned })
-    Assert ($smoke.Count -eq 3 -and (@($smoke | ForEach-Object { $_.Id } | Sort-Object) -join ',') -eq 'backend-smoke,secrets-smoke,storage-smoke') 'only reviewed package Smoke checks are implemented'
+    Assert ($smoke.Count -eq 4 -and (@($smoke | ForEach-Object { $_.Id } | Sort-Object) -join ',') -eq 'backend-smoke,l3-smoke-observability,secrets-smoke,storage-smoke') 'only reviewed storage, secrets, backend and observability Smoke checks are implemented'
     Assert ((@($smoke[0].Args) -contains '--allow-cluster-changes') -and (@($smoke[0].Args) -contains '--allow-controller-restart') -and
         (@($smoke[0].Needs) -contains 'file:review.json')) 'storage Smoke requires dispatcher consent and an explicit artifact review file'
     $secretsSmoke = @($smoke | Where-Object { $_.Id -eq 'secrets-smoke' })[0]
@@ -222,9 +222,11 @@ try {
         (@($secretsSmoke.Needs) -contains 'env:PCLOUD_BAO_TOKEN')) 'secrets Smoke requires reviewed artifacts, consent and an operator environment token'
     $backendSmoke = @($smoke | Where-Object { $_.Id -eq 'backend-smoke' })[0]
     Assert ((@($backendSmoke.Args) -contains '--allow-cluster-changes') -and (@($backendSmoke.Needs) -contains 'file:review.json')) 'backend Smoke requires explicit consent and reviewed revision/artifact inputs'
+    $observeSmoke = @($smoke | Where-Object { $_.Id -eq 'l3-smoke-observability' })[0]
+    Assert ((@($observeSmoke.Args) -contains '--allow-cluster-changes') -and (@($observeSmoke.Needs) -contains 'file:review.json')) 'observability Smoke requires isolated artifact review and explicit consent'
     $l3 = @($plan | Where-Object { $_.Package -eq 'deploy/03-observability' })
-    Assert ($l3.Count -gt 0 -and @($l3 | Where-Object { -not $_.Planned }).Count -eq 0) 'every Layer 3 entry is NOT IMPLEMENTED'
-    Assert (@($l3 | Where-Object { $_.Required }).Count -eq 0) 'Layer 3 is visible but optional in a default -Mode All selection'
+    Assert ($l3.Count -eq 4 -and @($l3 | Where-Object { $_.Planned }).Count -eq 0) 'Layer 3 has four implemented package checks'
+    Assert (@($l3 | Where-Object { $_.Required }).Count -eq 4) 'Layer 3 All mode requires both Static checks, Live and Smoke'
     $r3 = Invoke-Runner @('-List', '-Json', '-Mode', 'All', '-Package', 'deploy/03-observability')
     $l3Named = @(); if ($r3.Code -eq 0) { $l3Named = @($r3.Text | ConvertFrom-Json | ForEach-Object { $_ }) }
     Assert ($l3Named.Count -eq $l3.Count -and @($l3Named | Where-Object { -not $_.Required }).Count -eq 0) 'Layer 3 named by -Package: every check required'
