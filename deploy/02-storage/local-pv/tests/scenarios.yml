@@ -1,0 +1,372 @@
+---
+# Consolidated scenarios for tests/check-logic.yml. Everything here is SYNTHETIC:
+# no value was read from a real disk. Each scenario is fed to the SAME templates
+# the playbooks use (inventory-errors.j2, config-digests.j2, disk-facts.j2,
+# select-refusals.j2, verify-report.j2), so the parsing and the decision are the
+# ones that run on a node. "expect: ok" means no refusal; any other string must
+# appear in the refusals or failures, and there must be at least one.
+# Scenarios override YAML-merged keys on purpose (tests/verify-local-pv.sh tells
+# Ansible to accept that when it loads this file).
+
+# ----- shared building blocks -------------------------------------------------
+u1: &u1 "11111111-2222-4333-8444-555555555551"
+u2: &u2 "11111111-2222-4333-8444-555555555552"
+
+vol_metrics: &vol_metrics {name: lpv-w1-metrics, subdir: metrics, capacity_gib: 8, owner_uid: 10001, owner_gid: 10001, mode: "0750", claim: {namespace: obs, name: data-metrics-0}}
+vol_grafana: &vol_grafana {name: lpv-w1-grafana, subdir: grafana, capacity_gib: 1, owner_uid: 10002, owner_gid: 10002, mode: "0750", claim: {namespace: obs, name: data-grafana-0}}
+vol_logs: &vol_logs {name: lpv-w2-logs, subdir: logs, capacity_gib: 5, owner_uid: 10003, owner_gid: 10003, mode: "0750", claim: {namespace: obs, name: data-logs-0}}
+
+disk_1: &disk_1 {name: data-01, size_bytes: 21474836480, filesystem_uuid: "", identity: {by_id: /dev/disk/by-id/scsi-DATA1}, volumes: [*vol_metrics, *vol_grafana]}
+disk_w2: &disk_w2 {name: data-01, size_bytes: 21474836480, filesystem_uuid: "", identity: {by_id: /dev/disk/by-id/scsi-DATA1}, volumes: [*vol_logs]}
+disk_rec: &disk_rec {<<: *disk_1, filesystem_uuid: *u1}
+
+node_1: &node_1 {address: 192.0.2.21, disks: [*disk_1]}
+node_2: &node_2 {address: 192.0.2.22, disks: [*disk_w2]}
+real_1: &real_1 {rke2-worker-01: {address: 10.20.0.21, disks: [*disk_rec]}}
+syn_1: &syn_1 {rke2-worker-01: {address: 192.0.2.21, disks: [*disk_rec]}}
+
+# ----- inventory rules --------------------------------------------------------
+inventory_cases:
+  - name: two nodes may declare the same guest identifier (independent VM disks)
+    inventory: {rke2-worker-01: *node_1, rke2-worker-02: *node_2}
+    expect: ok
+  - name: the same by_id twice on ONE node is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [*disk_1, {<<: *disk_1, name: data-02, volumes: [{<<: *vol_logs, name: lpv-x, claim: {namespace: obs, name: other}}]}]}}
+    expect: for more than one disk on this node
+  - name: the same disk name twice on one node is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [*disk_1, {<<: *disk_1, identity: {by_id: /dev/disk/by-id/scsi-OTHER}}]}}
+    expect: is declared twice on this node
+  - name: a kernel device name is not an identity
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {by_id: /dev/sdb}}]}}
+    expect: kernel names such as /dev/sdb are not stable
+  - name: a device path key is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, device: /dev/sdb}]}}
+    expect: unknown disk key device
+  - name: no identity at all is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {}}]}}
+    expect: identity needs by_id, serial or wwn
+  - name: a SCSI address alone is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {scsi_hctl: "0:0:0:1"}}]}}
+    expect: also needs vendor and model
+  - name: a SCSI address with vendor and model but no review is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: Virtual Disk}}]}}
+    expect: requires identity_review
+  - name: a SCSI address with a review that has one supporting fact is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: Virtual Disk}, identity_review: {reviewed_by: owner, reviewed_on: "2026-09-30", supporting_facts: ["size matches"]}}]}}
+    expect: requires identity_review
+  - name: a fully reviewed SCSI fallback is accepted
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: Virtual Disk}, identity_review: {reviewed_by: owner, reviewed_on: "2026-09-30", supporting_facts: ["size matches the VHDX", "controller location 0:1 seen in VM settings"]}}]}}
+    expect: ok
+  - name: the same SCSI address on two disks of one node is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: VD}, identity_review: &review {reviewed_by: owner, reviewed_on: "2026-09-30", supporting_facts: [a, b]}}, {<<: *disk_1, name: data-02, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: VD}, identity_review: *review, volumes: [{<<: *vol_logs, name: lpv-y, claim: {namespace: obs, name: other}}]}]}}
+    expect: for more than one disk on this node
+  - name: a subdir that climbs out of the mount is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [{<<: *vol_metrics, subdir: ../rancher}]}]}}
+    expect: subdir must be one plain lowercase directory name
+  - name: a volume name repeated across nodes is refused
+    inventory: {rke2-worker-01: *node_1, rke2-worker-02: {address: 192.0.2.22, disks: [{<<: *disk_w2, volumes: [{<<: *vol_logs, name: lpv-w1-metrics}]}]}}
+    expect: is declared more than once in the cluster
+  - name: a claim referenced twice is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [*vol_metrics, {<<: *vol_grafana, claim: {namespace: obs, name: data-metrics-0}}]}]}}
+    expect: is referenced by more than one volume
+  - name: capacities at the budget are accepted (15 GiB of a 20 GiB disk)
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [{<<: *vol_metrics, capacity_gib: 15}]}]}}
+    expect: ok
+  - name: capacities above the budget are refused (16 GiB of a 20 GiB disk)
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [{<<: *vol_metrics, capacity_gib: 16}]}]}}
+    expect: above the 15 GiB budget
+  - name: a root-owned volume is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [{<<: *vol_metrics, owner_uid: 0}]}]}}
+    expect: must be a non-root numeric id
+  - name: a world-writable volume mode is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: [{<<: *vol_metrics, mode: "0777"}]}]}}
+    expect: not world-writable
+  - name: a disk with no volumes is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, volumes: []}]}}
+    expect: no volumes are declared
+  - name: a node with no disks is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: []}}
+    expect: no disks are declared
+  - name: a size below the minimum is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, size_bytes: 1073741824}]}}
+    expect: below the minimum
+  - name: a malformed filesystem UUID is refused
+    inventory: {rke2-worker-01: {address: 192.0.2.21, disks: [{<<: *disk_1, filesystem_uuid: NOT-A-UUID}]}}
+    expect: must be a lowercase ext4 UUID
+  - name: rendering needs the recorded UUID
+    uuid_rule: required
+    inventory: {rke2-worker-01: *node_1}
+    expect: filesystem_uuid is not recorded
+  - name: mount root outside /var/lib/pcloud is refused (never RKE2 data)
+    mount_root: /var/lib/rancher
+    inventory: {rke2-worker-01: *node_1}
+    expect: must be an absolute path below /var/lib/pcloud/
+  - name: mount root with .. is refused
+    mount_root: /var/lib/pcloud/../rancher
+    inventory: {rke2-worker-01: *node_1}
+    expect: must be an absolute path below /var/lib/pcloud/
+  - name: mount root with a trailing slash is refused
+    mount_root: /var/lib/pcloud/local-pv/
+    inventory: {rke2-worker-01: *node_1}
+    expect: must be an absolute path below /var/lib/pcloud/
+  - name: a live run refuses documentation addresses
+    live: true
+    inventory: {rke2-worker-01: *node_1}
+    expect: is a documentation address
+  - name: a live run refuses SYNTHETIC example values
+    live: true
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_1, identity: {by_id: /dev/disk/by-id/scsi-SYNTHETIC-1}}]}}
+    expect: contains SYNTHETIC example values
+  - name: a live run with real-looking values is accepted
+    live: true
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [*disk_1]}}
+    expect: ok
+
+  # ---- verification stamps: bypass, binding to the configuration, freshness ----
+  # stamp: {passed, age_hours, uuid, omit_epoch, verified_inventory, verified_mount_root}
+  - {name: rendering without a stamp is refused, require_stamps: true, uuid_rule: required, inventory: *real_1, expect: no verification stamp}
+  - {name: a fresh passing stamp for the same configuration is accepted, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: 1}, expect: ok}
+  - {name: a stamp at the edge of the freshness window is accepted (23 hours), require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: 23}, expect: ok}
+  - {name: a stamp past the freshness window is refused (25 hours), require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: 25}, expect: has expired}
+  - {name: the window is configurable (2 hours old, 1 hour allowed), require_stamps: true, uuid_rule: required, max_age_hours: 1, inventory: *real_1, stamp: {passed: true, age_hours: 2}, expect: has expired}
+  - {name: a stamp dated in the future is refused, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: -1}, expect: dated in the future}
+  - {name: a few seconds of clock skew are tolerated, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: -0.01}, expect: ok}
+  - {name: a stamp without a timestamp is refused, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: 1, omit_epoch: true}, expect: has no valid timestamp}
+  - {name: a stamp that records a failed verification is refused, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: false, age_hours: 1}, expect: records a failed verification}
+  - {name: a stamp for a different filesystem UUID is refused, require_stamps: true, uuid_rule: required, inventory: *real_1, stamp: {passed: true, age_hours: 1, uuid: *u2}, expect: names a different filesystem UUID}
+  - name: a changed volume mode invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, volumes: [{<<: *vol_metrics, mode: "0700"}, *vol_grafana]}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed volume owner invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, volumes: [{<<: *vol_metrics, owner_uid: 10009}, *vol_grafana]}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed volume path (subdir) invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, volumes: [{<<: *vol_metrics, subdir: metrics2}, *vol_grafana]}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed disk identity invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, identity: {by_id: /dev/disk/by-id/scsi-DATA2}}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed disk size invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, size_bytes: 32212254720}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed mount path (mount root) invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    mount_root: /var/lib/pcloud/other
+    inventory: *real_1
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1, verified_mount_root: /var/lib/pcloud/local-pv}
+    expect: for a different configuration
+  - name: a changed recorded UUID invalidates the stamp
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_1, filesystem_uuid: *u2}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: for a different configuration
+  - name: a changed capacity or claim does not (they are not verified on the node)
+    require_stamps: true
+    uuid_rule: required
+    inventory: {rke2-worker-01: {address: 10.20.0.21, disks: [{<<: *disk_rec, volumes: [{<<: *vol_metrics, capacity_gib: 9, claim: {namespace: obs, name: other-claim}}, *vol_grafana]}]}}
+    stamp: {passed: true, age_hours: 1, verified_inventory: *real_1}
+    expect: ok
+  - {name: a REAL inventory cannot bypass the stamps, require_stamps: true, bypass: true, uuid_rule: required, inventory: *real_1, expect: cannot be bypassed}
+  - {name: a real inventory that merely claims to be synthetic is refused, synthetic: true, require_stamps: false, bypass: true, uuid_rule: required, inventory: *real_1, expect: may be real}
+  - {name: a synthetic inventory with only documentation addresses may bypass, synthetic: true, require_stamps: false, bypass: true, uuid_rule: required, inventory: *syn_1, expect: ok}
+  - {name: a synthetic inventory is refused for a live run, synthetic: true, live: true, require_stamps: false, uuid_rule: required, inventory: *syn_1, expect: cannot be used for a live run}
+
+# ----- probe fixtures: the text a node returns -> disk-facts.j2 ---------------------------
+# The probe is assembled from named sections in probe_order; a scenario overrides or
+# empties (= "not reported") exactly the section it wants to break.
+sda: &sda {name: sda, path: /dev/sda, type: disk, size: 32212254720, ro: false, serial: "", wwn: "", vendor: "Msft    ", model: "Virtual Disk    ", hctl: "0:0:0:0", fstype: null, uuid: null, label: null, mountpoints: [null], children: [{name: sda1, type: part}]}
+sdb: &sdb {name: sdb, path: /dev/sdb, type: disk, size: 21474836480, ro: false, serial: "", wwn: "", vendor: "Msft    ", model: "Virtual Disk    ", hctl: "0:0:0:1", fstype: null, uuid: null, label: null, mountpoints: [null]}
+sdb_pkg: &sdb_pkg {<<: *sdb, fstype: ext4, uuid: *u1, label: lpv-data-01}
+sr0: &sr0 {name: sr0, path: /dev/sr0, type: rom, size: 45056, ro: true, mountpoints: [null]}
+
+probe_order: [tools, wipefs, mkfs, install, path_root, path_boot, path_efi, path_rancher, path_kubelet, path_containerd, fstab, swap, links, holders_sda, holders_sdb, sig_sda, sig_sdb, tail]
+probe_defaults: &probe_defaults {tools: [], wipefs: [], mkfs: [], install: [], path_root: [], path_boot: [], path_efi: [], path_rancher: [], path_kubelet: [], path_containerd: [], fstab: [], swap: [], links: [], holders_sda: [], holders_sdb: [], sig_sda: [], sig_sdb: [], tail: []}
+
+tools_common: &tools_common ["@tool|lsblk|ok", "@tool|findmnt|ok", "@tool|blkid|ok", "@tool|stat|ok", "@tool|df|ok", "@tool|awk|ok", "@tool|find|ok", "@tool|tr|ok", "@tool|sort|ok", "@tool|grep|ok", "@tool|tail|ok", "@tool|ls|ok", "@tool|basename|ok", "@tool|dirname|ok", "@tool|mount|ok", "@tool|chattr|ok"]
+sections: &sections
+  tools: *tools_common
+  wipefs: ["@tool|wipefs|ok"]
+  mkfs: ["@tool|mkfs.ext4|ok"]
+  install: ["@tool|install|ok"]
+  path_root: ["@path|/|ok|sda,"]
+  path_boot: ["@path|/boot|ok|sda,"]
+  path_efi: ["@path|/boot/efi|ok|sda,"]
+  path_rancher: ["@path|/var/lib/rancher|ok|sda,"]
+  path_kubelet: ["@path|/var/lib/kubelet|ok|sda,"]
+  path_containerd: ["@path|/var/lib/containerd|absent|"]
+  fstab: ["@fstab|ok", "@fstab_entry|LABEL=cloudimg-rootfs / ext4 discard,commit=30,errors=remount-ro 0 1", "@fstab_entry|LABEL=BOOT /boot ext4 defaults 0 2", "@fstab_entry|LABEL=UEFI /boot/efi vfat umask=0077 0 1"]
+  swap: ["@swap|ok"]
+  links: ["@links|ok", "@link|/dev/disk/by-id/scsi-ROOT ../../sda", "@link|/dev/disk/by-id/scsi-DATA1 ../../sdb"]
+  holders_sda: ["@holders|sda|ok|"]
+  holders_sdb: ["@holders|sdb|ok|"]
+  sig_sda: ["@sig|sda|ok|3"]
+  sig_sdb: ["@sig|sdb|ok|0"]
+  tail: ["@disks|2", "@end|ok"]
+
+raw: &raw {lsblk: [*sda, *sdb, *sr0], probe: *sections}
+raw_pkg: &raw_pkg {lsblk: [*sda, *sdb_pkg, *sr0], probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"]}}
+
+decl: &decl {name: data-01, size_bytes: 21474836480, filesystem_uuid: "", identity: {by_id: /dev/disk/by-id/scsi-DATA1}}
+decl_pkg: &decl_pkg {<<: *decl, filesystem_uuid: *u1}
+
+confirm_format: &confirm_format "FORMAT rke2-worker-01 data-01 /dev/sdb 21474836480"
+confirm_adopt: &confirm_adopt "ADOPT rke2-worker-01 data-01 /dev/sdb 11111111-2222-4333-8444-555555555551"
+
+selection_cases:
+  # ---- blank preparation ----
+  - {name: a blank, unmounted, signature-free disk matching its identity is accepted, mode: blank, disk: *decl, raw: *raw, expect: ok, confirmation: *confirm_format}
+  - {name: the root disk is refused, mode: blank, disk: {<<: *decl, size_bytes: 32212254720, identity: {by_id: /dev/disk/by-id/scsi-ROOT}}, raw: *raw, expect: backs the root filesystem}
+  - {name: a disk backing the RKE2 data directory is refused, mode: blank, disk: *decl, raw: {lsblk: [*sda, *sdb, *sr0], probe: {<<: *sections, path_rancher: ["@path|/var/lib/rancher|ok|sdb,"]}}, expect: backs the root filesystem}
+  - {name: a mounted disk is refused, mode: blank, disk: *decl, raw: {<<: *raw, lsblk: [*sda, {<<: *sdb, mountpoints: [/mnt/data]}, *sr0]}, expect: is mounted at /mnt/data}
+  - {name: a partitioned disk is refused, mode: blank, disk: *decl, raw: {<<: *raw, lsblk: [*sda, {<<: *sdb, children: [{name: sdb1, type: part}]}, *sr0]}, expect: has partitions or child devices}
+  - {name: a disk with a filesystem is refused (a label is not ownership), mode: blank, disk: *decl, raw: *raw_pkg, expect: carries a filesystem or other signature}
+  - {name: a disk with a hidden signature is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|2"]}}, expect: carries a filesystem or other signature}
+  - {name: a disk held by LVM or md is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, holders_sdb: ["@holders|sdb|ok|dm-0,"]}}, expect: is held by other devices}
+  - {name: a swap disk is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, swap: ["@swap|ok", "@swapdev|/dev/sdb"]}}, expect: is in use as swap}
+  - {name: a disk referenced in fstab by its stable link is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, fstab: ["@fstab|ok", "@fstab_entry|/dev/disk/by-id/scsi-DATA1 /mnt/x ext4 defaults 0 2"]}}, expect: is referenced in /etc/fstab}
+  - {name: a mount point already claimed in fstab is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, fstab: ["@fstab|ok", "@fstab_entry|UUID=99999999-2222-4333-8444-555555555559 /var/lib/pcloud/local-pv/data-01 ext4 defaults 0 2"]}}, expect: is already claimed in /etc/fstab}
+  - {name: a read-only disk is refused, mode: blank, disk: *decl, raw: {<<: *raw, lsblk: [*sda, {<<: *sdb, ro: true}, *sr0]}, expect: is read-only}
+  - {name: a size that differs from the declaration is refused, mode: blank, disk: {<<: *decl, size_bytes: 21474836481}, raw: *raw, expect: differs from the declared size_bytes}
+  - {name: an identity absent on this node is refused, mode: blank, disk: {<<: *decl, identity: {by_id: /dev/disk/by-id/scsi-NOT-HERE}}, raw: *raw, expect: no device on this node matches}
+  - {name: an empty identity is refused rather than matching every disk, mode: blank, disk: {<<: *decl, identity: {}}, raw: *raw, expect: no identity is declared}
+  - {name: a serial that does not match is refused, mode: blank, disk: {<<: *decl, identity: {serial: SN-1}}, raw: *raw, expect: no device on this node matches}
+  - name: an identity shared by two devices on this node is refused as ambiguous
+    mode: blank
+    disk: {<<: *decl, identity: {serial: SN-DUP}}
+    raw: {lsblk: [*sda, {<<: *sdb, serial: SN-DUP}, {<<: *sdb, name: sdc, path: /dev/sdc, serial: SN-DUP, hctl: "0:0:0:2"}, *sr0], probe: {<<: *sections, holders_sdb: ["@holders|sdb|ok|", "@holders|sdc|ok|"], sig_sdb: ["@sig|sdb|ok|0", "@sig|sdc|ok|0"]}}
+    expect: is ambiguous
+  - {name: a recorded filesystem UUID refuses blank preparation, mode: blank, disk: *decl_pkg, raw: *raw, expect: already records a filesystem UUID}
+  - {name: a reviewed SCSI fallback with matching vendor and model is accepted, mode: blank, disk: {<<: *decl, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: Virtual Disk}}, raw: *raw, expect: ok}
+  - {name: a SCSI fallback whose model differs is refused, mode: blank, disk: {<<: *decl, identity: {scsi_hctl: "0:0:0:1", vendor: Msft, model: Other Disk}}, raw: *raw, expect: no device on this node matches}
+
+  # ---- failed or unreported probes are refusals, never an empty safe result ----
+  - {name: an unreadable fstab is refused (not read as "no entries"), mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, fstab: ["@fstab|fail|cannot read /etc/fstab"]}}, expect: the fstab probe failed}
+  - {name: an fstab probe that did not report is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, fstab: []}}, expect: the fstab probe did not report}
+  - {name: an unreadable swap list is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, swap: ["@swap|fail|cannot read /proc/swaps"]}}, expect: the swap probe failed}
+  - {name: a stable-link listing that failed is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, links: ["@links|fail|find failed in /dev/disk/by-id"]}}, expect: the links probe failed}
+  - {name: unreadable holders are refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, holders_sdb: ["@holders|sdb|fail|cannot read /sys/block/sdb/holders"]}}, expect: holders could not be read}
+  - {name: holders that were not reported are refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, holders_sdb: []}}, expect: holders were not reported}
+  - {name: a failed signature probe is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, sig_sdb: ["@sig|sdb|fail|wipefs did not report for /dev/sdb"]}}, expect: signature probe failed}
+  - {name: a signature probe that did not report is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, sig_sdb: []}}, expect: signature probe did not report}
+  - {name: a signature result without a count is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|"]}}, expect: signature probe failed}
+  - {name: a missing wipefs is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, wipefs: ["@tool|wipefs|missing"], sig_sdb: ["@sig|sdb|fail|wipefs did not report for /dev/sdb"]}}, expect: the required tool wipefs is missing}
+  - {name: a wipefs that was never reported is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, wipefs: []}}, expect: the required tool wipefs is missing}
+  - {name: a missing mkfs.ext4 refuses preparation, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, mkfs: ["@tool|mkfs.ext4|missing"]}}, expect: the required tool mkfs.ext4 is missing}
+  - {name: a missing install refuses preparation, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, install: ["@tool|install|missing"]}}, expect: the required tool install is missing}
+  - {name: a probe cut short (no end marker) is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, tail: ["@disks|2"]}}, expect: the probe output is incomplete}
+  - {name: a probe with no disk count is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, tail: ["@end|ok"]}}, expect: did not report how many block devices}
+  - {name: an empty probe is refused, mode: blank, disk: *decl, raw: {lsblk: [*sda, *sdb, *sr0], probe: *probe_defaults}, expect: the probe output is incomplete}
+
+  # ---- partial protected-path discovery: each path is judged on its own ----
+  - {name: finding the root disk alone is not enough (RKE2 data lookup failed), mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_rancher: ["@path|/var/lib/rancher|error|findmnt failed"]}}, expect: /var/lib/rancher could not be inspected}
+  - {name: a failed kubelet lookup is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_kubelet: ["@path|/var/lib/kubelet|error|lsblk failed for /dev/sda1"]}}, expect: /var/lib/kubelet could not be inspected}
+  - {name: a failed containerd lookup is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_containerd: ["@path|/var/lib/containerd|error|no backing disk found for overlay"]}}, expect: /var/lib/containerd could not be inspected}
+  - {name: an unsearchable parent is a failed lookup, not an absent path, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_rancher: ["@path|/var/lib/rancher|error|parent directory is not searchable"]}}, expect: parent directory is not searchable}
+  - {name: a path that was never inspected is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_boot: []}}, expect: /boot was not inspected}
+  - {name: only the root path inspected is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_boot: [], path_efi: [], path_rancher: [], path_kubelet: [], path_containerd: []}}, expect: was not inspected}
+  - {name: a root path reported absent is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_root: ["@path|/|absent|"]}}, expect: could not be inspected}
+  - {name: a root path without a backing disk is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_root: ["@path|/|ok|"]}}, expect: reported without a backing disk}
+  - {name: no protected disk at all is refused, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_root: ["@path|/|error|findmnt failed"], path_boot: ["@path|/boot|absent|"], path_efi: ["@path|/boot/efi|absent|"], path_rancher: ["@path|/var/lib/rancher|absent|"], path_kubelet: ["@path|/var/lib/kubelet|absent|"]}}, expect: protected-disk identification is incomplete}
+  - {name: genuinely absent optional paths are accepted, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_efi: ["@path|/boot/efi|absent|"], path_containerd: ["@path|/var/lib/containerd|absent|"], path_kubelet: ["@path|/var/lib/kubelet|absent|"]}}, expect: ok}
+  - {name: a disk that backs only one of the protected paths is still protected, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, path_efi: ["@path|/boot/efi|ok|sdb,"]}}, expect: backs the root filesystem}
+
+  # ---- typed authorization ----
+  - {name: the exact typed text is accepted, mode: blank, disk: *decl, raw: *raw, confirm: *confirm_format, expect: ok}
+  - {name: no typed text is refused, mode: blank, disk: *decl, raw: *raw, confirm: "", expect: authorization is missing}
+  - {name: text naming another disk is refused, mode: blank, disk: *decl, raw: *raw, confirm: "FORMAT rke2-worker-01 data-02 /dev/sdb 21474836480", expect: authorization is missing}
+  - {name: text naming another node is refused, mode: blank, disk: *decl, raw: *raw, confirm: "FORMAT rke2-worker-02 data-01 /dev/sdb 21474836480", expect: authorization is missing}
+  - {name: text naming another device path is refused, mode: blank, disk: *decl, raw: *raw, confirm: "FORMAT rke2-worker-01 data-01 /dev/sdc 21474836480", expect: authorization is missing}
+  - {name: an adopt text cannot authorize a format, mode: blank, disk: *decl, raw: *raw, confirm: *confirm_adopt, expect: authorization is missing}
+  - {name: typed text cannot override a failed guard, mode: blank, disk: *decl, raw: *raw_pkg, confirm: *confirm_format, expect: carries a filesystem or other signature}
+  - {name: typed text cannot override a failed probe, mode: blank, disk: *decl, raw: {<<: *raw, probe: {<<: *sections, fstab: ["@fstab|fail|cannot read /etc/fstab"]}}, confirm: *confirm_format, expect: the fstab probe failed}
+
+  # ---- adoption of package-managed storage ----
+  - {name: adopting a matching package disk is accepted, mode: adopt, disk: *decl_pkg, raw: *raw_pkg, expect: ok, confirmation: *confirm_adopt}
+  - {name: adopting with the exact typed text is accepted, mode: adopt, disk: *decl_pkg, raw: *raw_pkg, confirm: *confirm_adopt, expect: ok}
+  - {name: adopting without approval is refused, mode: adopt, disk: *decl_pkg, raw: *raw_pkg, confirm: "", expect: authorization is missing}
+  - {name: a format text cannot authorize an adoption, mode: adopt, disk: *decl_pkg, raw: *raw_pkg, confirm: *confirm_format, expect: authorization is missing}
+  - {name: a matching label with a different UUID is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, uuid: "99999999-2222-4333-8444-555555555559"}, *sr0]}, expect: differs from the recorded UUID}
+  - {name: adoption without a recorded UUID is refused, mode: adopt, disk: *decl, raw: *raw_pkg, expect: recorded filesystem UUID is required}
+  - {name: a label that is not the expected one is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, label: backup}, *sr0]}, expect: is not the expected lpv-data-01}
+  - {name: an extra signature is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|2"]}}, expect: exactly the one package filesystem}
+  - {name: a non-ext4 filesystem is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, fstype: xfs}, *sr0]}, expect: does not hold an ext4 filesystem}
+  - {name: mounted somewhere else is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, mountpoints: [/mnt/elsewhere]}, *sr0]}, expect: mounted somewhere other}
+  - {name: already mounted at the expected path is accepted, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, mountpoints: [/var/lib/pcloud/local-pv/data-01]}, *sr0]}, expect: ok}
+  - {name: a device-path fstab entry is refused, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], fstab: ["@fstab|ok", "@fstab_entry|/dev/sdb /var/lib/pcloud/local-pv/data-01 ext4 defaults 0 2"]}}, expect: that is not UUID=}
+  - {name: a UUID fstab entry at the expected path is accepted, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], fstab: ["@fstab|ok", "@fstab_entry|UUID=11111111-2222-4333-8444-555555555551 /var/lib/pcloud/local-pv/data-01 ext4 defaults,noatime,nofail 0 2"]}}, expect: ok}
+  - {name: the root disk cannot be adopted, mode: adopt, disk: {<<: *decl_pkg, size_bytes: 32212254720, identity: {by_id: /dev/disk/by-id/scsi-ROOT}}, raw: *raw_pkg, expect: backs the root filesystem}
+  - {name: adoption is refused when the fstab probe failed, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], fstab: ["@fstab|fail|cannot read /etc/fstab"]}}, expect: the fstab probe failed}
+  - {name: adoption is refused when the holders probe failed, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], holders_sdb: ["@holders|sdb|fail|x"]}}, expect: holders could not be read}
+  - {name: adoption is refused when the signature probe failed, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|fail|x"]}}, expect: signature probe failed}
+  - {name: adoption is refused when protected paths are only partly inspected, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], path_rancher: ["@path|/var/lib/rancher|error|findmnt failed"]}}, expect: /var/lib/rancher could not be inspected}
+  - {name: adoption is refused when a needed tool is missing, mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], install: ["@tool|install|missing"]}}, expect: the required tool install is missing}
+  - {name: adoption does not need mkfs.ext4 (it never formats), mode: adopt, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], mkfs: ["@tool|mkfs.ext4|missing"]}}, expect: ok}
+
+  # ---- verification of package-managed storage ----
+  - {name: verify accepts the package disk mounted at its path, mode: verify, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, mountpoints: [/var/lib/pcloud/local-pv/data-01]}, *sr0]}, expect: ok}
+  - {name: verify leaves a missing mount to the mount report, mode: verify, disk: *decl_pkg, raw: *raw_pkg, expect: ok}
+  - {name: verify refuses a mount somewhere else, mode: verify, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, mountpoints: [/mnt/elsewhere]}, *sr0]}, expect: not at /var/lib/pcloud/local-pv/data-01}
+  - {name: verify refuses a UUID that is not the recorded one, mode: verify, disk: *decl_pkg, raw: {<<: *raw_pkg, lsblk: [*sda, {<<: *sdb_pkg, uuid: "99999999-2222-4333-8444-555555555559"}, *sr0]}, expect: differs from the recorded UUID}
+  - {name: verify is refused when a probe failed, mode: verify, disk: *decl_pkg, raw: {<<: *raw_pkg, probe: {<<: *sections, sig_sdb: ["@sig|sdb|ok|1"], swap: ["@swap|fail|x"]}}, expect: the swap probe failed}
+
+# ----- mount verification: key=value text read from the node -> verify-report.j2 --
+vdisk: &vdisk
+  name: data-01
+  filesystem_uuid: *u1
+  volumes:
+    - {name: lpv-w1-metrics, subdir: metrics, owner_uid: 10001, owner_gid: 10001, mode: "0750"}
+    - {name: lpv-w1-grafana, subdir: grafana, owner_uid: 10002, owner_gid: 10002, mode: "0750"}
+
+mount_good: &mount_good
+  - "root_dev=2049"
+  - "mounted=yes"
+  - "source=/dev/sdb"
+  - "fstype=ext4"
+  - "options=rw,noatime"
+  - "mount_dev=2064"
+  - "uuid=11111111-2222-4333-8444-555555555551"
+  - "usage=21474836480 1073741824"
+  - "marker=disk=data-01,uuid=11111111-2222-4333-8444-555555555551,node=rke2-worker-01,"
+  - "vol|metrics|dir|2064|10001|10001|750|volume=lpv-w1-metrics,disk=data-01,uuid=11111111-2222-4333-8444-555555555551,"
+  - "vol|grafana|dir|2064|10002|10002|750|volume=lpv-w1-grafana,disk=data-01,uuid=11111111-2222-4333-8444-555555555551,"
+  - "end=ok"
+
+mount_cases:
+  - {name: a correct mount with correct volumes is accepted, disk: *vdisk, lines: *mount_good, expect: ok}
+  - {name: an absent mount is refused (fail closed), disk: *vdisk, lines: ["root_dev=2049", "mounted=no", "marker=", "vol|metrics|missing", "vol|grafana|missing", "end=ok"], expect: the data mount is absent}
+  - {name: a mount probe that reports an error is refused, disk: *vdisk, lines: ["root_dev=2049", "probe_error=findmnt does not work on this node", "marker=", "vol|metrics|missing", "vol|grafana|missing", "end=ok"], expect: could not be inspected}
+  - {name: findmnt and /proc/self/mounts disagreeing is refused, disk: *vdisk, lines: ["root_dev=2049", "probe_error=findmnt and /proc/self/mounts disagree about /var/lib/pcloud/local-pv/data-01", "marker=", "end=ok"], expect: disagree}
+  - {name: a mount state that was not reported is refused, disk: *vdisk, lines: ["root_dev=2049", "marker=", "end=ok"], expect: mount state was not reported}
+  - {name: a mount probe cut short is refused, disk: *vdisk, lines: "{{ mount_good | reject('match', 'end=') | list }}", expect: mount probe output is incomplete}
+  - {name: a mount from another device is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'source=/dev/sdb', 'source=/dev/sdc') | list }}", expect: not from the identified disk}
+  - {name: a mounted filesystem with another UUID is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'uuid=11111111-2222-4333-8444-555555555551', 'uuid=99999999-2222-4333-8444-555555555559') | list }}", expect: differs from the recorded UUID}
+  - {name: a non-ext4 mount is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'fstype=ext4', 'fstype=xfs') | list }}", expect: not ext4}
+  - {name: a read-only mount is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'options=rw,noatime', 'options=ro,noatime') | list }}", expect: the data mount is read-only}
+  - {name: a mount point on the root filesystem is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'mount_dev=2064', 'mount_dev=2049') | list }}", expect: on the root filesystem}
+  - {name: a missing disk marker is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'marker=disk=data-01,uuid=11111111-2222-4333-8444-555555555551,node=rke2-worker-01,', 'marker=') | list }}", expect: marker file is missing}
+  - {name: a marker naming another node is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'node=rke2-worker-01,', 'node=rke2-worker-02,') | list }}", expect: marker file is missing}
+  - {name: a missing volume directory is refused, disk: *vdisk, lines: "{{ mount_good | reject('match', 'vol[|]grafana') | list + ['vol|grafana|missing'] }}", expect: is missing under the mount}
+  - {name: a volume directory on the root filesystem is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'vol|metrics|dir|2064', 'vol|metrics|dir|2049') | list }}", expect: is not on the mounted filesystem}
+  - {name: a volume with the wrong owner is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', '|10001|10001|', '|0|0|') | list }}", expect: has owner 0:0}
+  - {name: a volume with the wrong mode is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', '|750|', '|777|') | list }}", expect: has owner}
+  - {name: a volume without its marker is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'volume=lpv-w1-grafana,disk=data-01,uuid=11111111-2222-4333-8444-555555555551,', '') | list }}", expect: has no marker naming volume lpv-w1-grafana}
+  - {name: a filesystem at the warning level is accepted with a warning, disk: *vdisk, lines: "{{ mount_good | map('replace', 'usage=21474836480 1073741824', 'usage=100 71') | list }}", expect: ok, warns: true}
+  - {name: a filesystem at the critical level is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'usage=21474836480 1073741824', 'usage=100 85') | list }}", expect: critical at}
+  - {name: unreadable usage is refused, disk: *vdisk, lines: "{{ mount_good | map('replace', 'usage=21474836480 1073741824', 'usage=') | list }}", expect: usage could not be read}

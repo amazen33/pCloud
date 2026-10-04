@@ -10,6 +10,7 @@ pCloud/
   deploy/
     00-infra/private-hyperv/     Hyper-V provisioning and tests/
     01-k8s-engine/rke2-ansible/  Ubuntu/RKE2 configuration and tests/
+    02-storage/local-pv/         static local PVs, disk guards and tests/
     02-cluster-addons/           kube-vip manifests, tests/, evidence/
       storage/local-path/       standalone lab storage, schemas and guarded acceptance
       storage/observability-filesystem/  lab LGTM data/WAL claims, handover and POSIX probes
@@ -53,3 +54,8 @@ The owner authorized Codex to implement that work in the Claude engineering
 role. M3a's code is available; its lab exit gate still needs a dedicated
 application-storage mount and authorized cluster acceptance. Crossplane is
 deferred; it is not a dependency of this lab.
+
+The [static local-PV package](deploy/02-storage/local-pv/README.md) is also
+implemented, with dated disk-preparation/temporary smoke evidence from
+2026-09-30. See [storage profile selection](deploy/README.md#storage-profile-selection)
+for its relationship to the local-path lab profile and current acceptance gates.

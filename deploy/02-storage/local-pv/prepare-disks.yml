@@ -1,0 +1,40 @@
+---
+# BLANK-DISK PREPARATION. The only playbook that can format, and only a disk
+# that carries no signature at all. It cannot reformat: once a disk holds the
+# package filesystem it has a signature and is refused (use check-storage.yml to
+# verify it, adopt-disks.yml to re-attach it).
+#
+#   ansible-playbook -i inventory/hosts.yml prepare-disks.yml --limit rke2-worker-01 --check
+#       reads the node and prints the plan and the exact text to type; changes nothing
+#   ansible-playbook -i inventory/hosts.yml prepare-disks.yml --limit rke2-worker-01
+#       asks for that text, then formats, mounts and creates the volume directories
+#
+# Requires --limit naming exactly one node, and a completed identity and SIZE in
+# the inventory read from the real disk by inspect-disks.yml. Formatting is a
+# separately authorized act naming the verified disk; see README.md.
+- name: Prepare blank local-PV disks on exactly one node
+  hosts: local_pv_nodes
+  gather_facts: false
+  become: true
+  vars:
+    local_pv_mode: blank
+    local_pv_live: true
+    local_pv_uuid_rule: any
+  tasks:
+    - name: Refuse to run without --limit naming exactly one node
+      ansible.builtin.assert:
+        that:
+          - ansible_limit is defined
+          - ansible_play_hosts_all | length == 1
+        fail_msg: "Use --limit with exactly one node name; refusing to touch several nodes in one run."
+        quiet: true
+
+    - name: Validate the inventory (contacts no host)
+      ansible.builtin.include_tasks: tasks/validate-inventory.yml
+
+    - name: Process each disk declared for this node
+      ansible.builtin.include_tasks: tasks/process-disk.yml
+      loop: "{{ local_pv.disks }}"
+      loop_control:
+        loop_var: local_pv_disk
+        label: "{{ local_pv_disk.name }}"

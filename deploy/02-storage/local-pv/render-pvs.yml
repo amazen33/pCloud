@@ -1,0 +1,56 @@
+---
+# Renders the PersistentVolume manifests for review. Runs on the controller and
+# contacts no node and no cluster; it never applies anything. Applying the
+# reviewed files with kubectl is a separate, authorized step.
+#
+# Fail closed: every disk must record its filesystem UUID, and check-storage.yml
+# must have written a passing verification stamp for the CURRENT configuration
+# (node, disk identity and size, UUID, mount path, volume names, subdirectories,
+# owners and modes) no more than local_pv_stamp_max_age_hours old (default 24). A
+# missing or wrong data mount, a changed configuration or an old stamp therefore
+# never reaches a rendered PV. The stamps are skipped only for an inventory that
+# declares local_pv_synthetic: true (the example), by the offline tests.
+# If the inventory holds SYNTHETIC values or documentation addresses the files
+# are named *.SYNTHETIC-DO-NOT-APPLY.yaml.
+#
+#   ansible-playbook -i inventory/hosts.yml render-pvs.yml
+#   LOCAL_PV_RENDER_DIR=/somewhere/outside/the/repo ansible-playbook -i inventory/hosts.yml render-pvs.yml
+- name: Render PersistentVolume manifests (controller only)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    local_pv_live: false
+    local_pv_uuid_rule: required
+    # LOCAL_PV_REQUIRE_STAMPS=false asks to skip the stamps. It is honoured only for
+    # an inventory that declares local_pv_synthetic: true and has nothing but
+    # documentation addresses; for any other inventory the request is itself an
+    # error, and the stamps stay required.
+    local_pv_bypass_stamps: "{{ (lookup('ansible.builtin.env', 'LOCAL_PV_REQUIRE_STAMPS') | default('true', true) | lower) in ['false', '0', 'no'] }}"
+    local_pv_require_stamps: "{{ not (local_pv_bypass_stamps | bool and (local_pv_synthetic | default(false) | bool)) }}"
+  tasks:
+    - name: Validate the inventory and the verification stamps
+      ansible.builtin.include_tasks: tasks/validate-inventory.yml
+
+    - name: Note whether the inventory is a synthetic example
+      ansible.builtin.set_fact:
+        local_pv_synthetic: >-
+          {{ 'SYNTHETIC' in (local_pv_inventory | to_json)
+             or (local_pv_inventory.values() | map(attribute='address')
+                 | select('match', '^(' ~ (local_pv_documentation_prefixes | map('regex_escape') | join('|')) ~ ')') | list | length > 0) }}
+
+    - name: Create the render directory
+      ansible.builtin.file:
+        path: "{{ local_pv_render_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render one manifest file per node
+      ansible.builtin.template:
+        src: pv.yaml.j2
+        dest: "{{ local_pv_render_dir }}/pv-{{ item }}{{ '.SYNTHETIC-DO-NOT-APPLY' if local_pv_synthetic | bool else '' }}.yaml"
+        mode: "0644"
+      vars:
+        local_pv_render_node: "{{ item }}"
+      loop: "{{ local_pv_inventory.keys() | list }}"

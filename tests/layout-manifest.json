@@ -28,6 +28,10 @@
       "test": "tests/verify-layer2.py"
     },
     {
+      "path": "deploy/02-storage/local-pv",
+      "test": "tests/verify-local-pv.sh"
+    },
+    {
       "path": "deploy/02-cluster-addons/storage/local-path",
       "test": "tests/verify-storage.py"
     },

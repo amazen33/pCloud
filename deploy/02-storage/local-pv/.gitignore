@@ -1,0 +1,6 @@
+# Site data: real addresses, disk identities and recorded filesystem UUIDs.
+inventory/hosts.yml
+inventory/host_vars/
+inventory/group_vars/all/local.yml
+# Reports (inspection, verification stamps) and rendered manifests.
+out/

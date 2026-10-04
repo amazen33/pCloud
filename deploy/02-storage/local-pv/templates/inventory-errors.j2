@@ -1,0 +1,226 @@
+{#-
+  Pure decision: every problem in the declared local-PV inventory, as a JSON
+  list of strings (empty list = valid). Reads variables only; contacts no host.
+
+  Inputs
+    local_pv_inventory   node -> {address, disks[]}
+    local_pv_live        true rejects documentation addresses and SYNTHETIC values
+    local_pv_uuid_rule   any | required (every disk must record its filesystem UUID)
+    local_pv_stamps      optional: "<node>/<disk>" -> verification stamp; consulted
+                         only when local_pv_require_stamps is true
+    local_pv_config_digests   "<node>/<disk>" -> digest of the CURRENT configuration
+                         (templates/config-digests.j2); local_pv_now_epoch is the
+                         current time in seconds
+    local_pv_synthetic   the inventory declares itself a synthetic example
+    local_pv_bypass_stamps   someone asked to skip stamps; accepted only for a
+                         synthetic inventory whose nodes all have documentation addresses
+  A stamp is accepted only if it passed, names the recorded UUID, carries the
+  digest of the current configuration, is not dated in the future, and is no
+  older than local_pv_stamp_max_age_hours (default 24).
+  plus the settings in inventory/group_vars/all/main.yml.
+
+  Identity is scoped to a node: two nodes may declare the same guest
+  identifier (independent VM disks); one node may not declare it twice.
+-#}
+{%- set errs = [] -%}
+{%- set root = local_pv_mount_root | default('', true) -%}
+{%- if root is not match('^/var/lib/pcloud/[A-Za-z0-9._/-]+$') or '..' in root or root.endswith('/') -%}
+  {%- set _ = errs.append('mount root ' ~ root ~ ' must be an absolute path below /var/lib/pcloud/, without .. or a trailing slash') -%}
+{%- endif -%}
+{%- if (local_pv_fs_overhead_percent | int) + (local_pv_fs_reserved_percent | int) + (local_pv_free_reserve_percent | int) >= 100 -%}
+  {%- set _ = errs.append('filesystem overhead, reserved blocks and free reserve percentages must sum to less than 100') -%}
+{%- endif -%}
+{%- if not (0 < (local_pv_warn_used_percent | int) < (local_pv_crit_used_percent | int) <= 100) -%}
+  {%- set _ = errs.append('usage thresholds must satisfy 0 < warn < critical <= 100') -%}
+{%- endif -%}
+{%- set nodes = local_pv_inventory | default({}, true) -%}
+{%- if nodes | length == 0 -%}
+  {%- set _ = errs.append('no nodes are declared in the local_pv_nodes group') -%}
+{%- endif -%}
+{#- Stamp bypass exists only for a declared synthetic example, which cannot reach a real node. -#}
+{%- set synthetic = local_pv_synthetic | default(false) | bool -%}
+{%- if local_pv_bypass_stamps | default(false) | bool and not synthetic -%}
+  {%- set _ = errs.append('verification stamps cannot be bypassed: only an inventory that declares local_pv_synthetic: true may skip them') -%}
+{%- endif -%}
+{%- if synthetic -%}
+  {%- if local_pv_live | default(false) -%}
+    {%- set _ = errs.append('an inventory that declares local_pv_synthetic: true cannot be used for a live run') -%}
+  {%- endif -%}
+  {%- for node, spec in nodes.items() -%}
+    {%- set ns_doc = namespace(doc=false) -%}
+    {%- for prefix in local_pv_documentation_prefixes -%}
+      {%- if (spec.address | default('', true)).startswith(prefix) -%}{%- set ns_doc.doc = true -%}{%- endif -%}
+    {%- endfor -%}
+    {%- if not ns_doc.doc -%}
+      {%- set _ = errs.append(node ~ ': the inventory declares local_pv_synthetic: true but this node has a non-documentation address, so it may be real') -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- set pv_names = [] -%}
+{%- set claims = [] -%}
+{%- for node, spec in nodes.items() -%}
+  {%- set addr = spec.address | default('', true) -%}
+  {%- if node is not match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$') -%}
+    {%- set _ = errs.append('node name ' ~ node ~ ' is not a valid Kubernetes node name') -%}
+  {%- endif -%}
+  {%- if addr == '' -%}
+    {%- set _ = errs.append(node ~ ': ansible_host is not set') -%}
+  {%- elif local_pv_live | default(false) -%}
+    {%- for prefix in local_pv_documentation_prefixes -%}
+      {%- if addr.startswith(prefix) -%}
+        {%- set _ = errs.append(node ~ ': ' ~ addr ~ ' is a documentation address; a live run needs the real node address') -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- set disks = spec.disks | default([], true) -%}
+  {%- if disks | length == 0 -%}
+    {%- set _ = errs.append(node ~ ': no disks are declared') -%}
+  {%- endif -%}
+  {%- set seen = {'name': [], 'by_id': [], 'serial': [], 'wwn': [], 'hctl': []} -%}
+  {%- for disk in disks -%}
+    {%- set dname = disk.name | default('', true) -%}
+    {%- set where = node ~ '/' ~ dname -%}
+    {%- for key in disk.keys() if key not in ['name', 'identity', 'identity_review', 'size_bytes', 'filesystem_uuid', 'volumes'] -%}
+      {%- set _ = errs.append(where ~ ': unknown disk key ' ~ key ~ ' (a device path such as /dev/sdb is never accepted; use identity)') -%}
+    {%- endfor -%}
+    {%- if dname is not match('^[a-z0-9]([-a-z0-9]{0,10}[a-z0-9])?$') -%}
+      {%- set _ = errs.append(node ~ ': disk name ' ~ dname ~ ' must be 1-12 lowercase letters, digits or hyphens') -%}
+    {%- elif dname in seen['name'] -%}
+      {%- set _ = errs.append(node ~ ': disk name ' ~ dname ~ ' is declared twice on this node') -%}
+    {%- endif -%}
+    {%- set _ = seen['name'].append(dname) -%}
+    {%- if disk.size_bytes is not defined or disk.size_bytes is not integer -%}
+      {%- set _ = errs.append(where ~ ': size_bytes must be an integer (the exact size read by the inspection)') -%}
+    {%- elif disk.size_bytes < (local_pv_min_disk_bytes | int) -%}
+      {%- set _ = errs.append(where ~ ': size_bytes is below the minimum of ' ~ local_pv_min_disk_bytes ~ ' bytes') -%}
+    {%- endif -%}
+    {%- set ident = disk.identity | default({}, true) -%}
+    {%- set review = disk.identity_review | default({}, true) -%}
+    {%- for key in ident.keys() if key not in ['by_id', 'serial', 'wwn', 'scsi_hctl', 'vendor', 'model'] -%}
+      {%- set _ = errs.append(where ~ ': unknown identity key ' ~ key) -%}
+    {%- endfor -%}
+    {%- set by_id = ident.get('by_id', '') or '' -%}
+    {%- set serial = ident.get('serial', '') or '' -%}
+    {%- set wwn = ident.get('wwn', '') or '' -%}
+    {%- set hctl = ident.get('scsi_hctl', '') or '' -%}
+    {%- if by_id != '' and by_id is not match('^/dev/disk/by-id/[A-Za-z0-9:._+=-]+$') -%}
+      {%- set _ = errs.append(where ~ ': identity.by_id must be a /dev/disk/by-id link; kernel names such as /dev/sdb are not stable') -%}
+    {%- endif -%}
+    {%- if by_id == '' and serial == '' and wwn == '' -%}
+      {%- if hctl == '' -%}
+        {%- set _ = errs.append(where ~ ': identity needs by_id, serial or wwn (or a reviewed scsi_hctl fallback)') -%}
+      {%- else -%}
+        {%- if hctl is not match('^[0-9]+:[0-9]+:[0-9]+:[0-9]+$') -%}
+          {%- set _ = errs.append(where ~ ': scsi_hctl must look like host:channel:target:lun') -%}
+        {%- endif -%}
+        {%- if (ident.get('vendor', '') or '') == '' or (ident.get('model', '') or '') == '' -%}
+          {%- set _ = errs.append(where ~ ': a SCSI-address-only identity also needs vendor and model') -%}
+        {%- endif -%}
+        {%- if (review.get('reviewed_by', '') or '') == '' or (review.get('reviewed_on', '') or '') is not match('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') or (review.get('supporting_facts', []) or []) | length < 2 -%}
+          {%- set _ = errs.append(where ~ ': a SCSI-address-only identity requires identity_review with reviewed_by, reviewed_on (YYYY-MM-DD) and at least two supporting_facts') -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endif -%}
+    {%- for pair in [['by_id', by_id], ['serial', serial], ['wwn', wwn], ['hctl', hctl]] if pair[1] != '' -%}
+      {%- if pair[1] in seen[pair[0]] -%}
+        {%- set _ = errs.append(node ~ ': the same ' ~ pair[0] ~ ' ' ~ pair[1] ~ ' is declared for more than one disk on this node') -%}
+      {%- endif -%}
+      {%- set _ = seen[pair[0]].append(pair[1]) -%}
+    {%- endfor -%}
+    {%- if local_pv_live | default(false) and 'SYNTHETIC' in (disk | to_json) -%}
+      {%- set _ = errs.append(where ~ ': contains SYNTHETIC example values; a live run needs identities read from the real disk') -%}
+    {%- endif -%}
+    {%- set fsuuid = disk.filesystem_uuid | default('', true) -%}
+    {%- if fsuuid != '' and fsuuid is not match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') -%}
+      {%- set _ = errs.append(where ~ ': filesystem_uuid must be a lowercase ext4 UUID') -%}
+    {%- endif -%}
+    {%- if local_pv_uuid_rule | default('any') == 'required' and fsuuid == '' -%}
+      {%- set _ = errs.append(where ~ ': filesystem_uuid is not recorded; prepare or adopt the disk first, then record the UUID') -%}
+    {%- endif -%}
+    {%- if local_pv_require_stamps | default(false) -%}
+      {%- set key = node ~ '/' ~ dname -%}
+      {%- set stamp = (local_pv_stamps | default({})).get(key, {}) -%}
+      {%- set digest = (local_pv_config_digests | default({})).get(key, '') -%}
+      {%- set max_age = (local_pv_stamp_max_age_hours | default(24) | int) -%}
+      {%- if stamp | length == 0 -%}
+        {%- set _ = errs.append(where ~ ': no verification stamp; run check-storage.yml against this node before rendering') -%}
+      {%- elif stamp.get('passed', false) is not sameas true -%}
+        {%- set _ = errs.append(where ~ ': the verification stamp records a failed verification') -%}
+      {%- else -%}
+        {%- if fsuuid == '' or stamp.get('filesystem_uuid', '') != fsuuid -%}
+          {%- set _ = errs.append(where ~ ': the verification stamp names a different filesystem UUID') -%}
+        {%- endif -%}
+        {%- if digest == '' or stamp.get('config_digest', '') != digest -%}
+          {%- set _ = errs.append(where ~ ': the verification stamp was made for a different configuration (node, identity, size, UUID, mount path or volumes changed); run check-storage.yml again') -%}
+        {%- endif -%}
+        {%- set ep = stamp.get('checked_epoch', none) -%}
+        {%- if ep is not integer -%}
+          {%- set _ = errs.append(where ~ ': the verification stamp has no valid timestamp') -%}
+        {%- elif local_pv_now_epoch is not defined or local_pv_now_epoch is not integer -%}
+          {%- set _ = errs.append(where ~ ': the current time was not supplied, so the stamp age cannot be judged') -%}
+        {%- elif ep > local_pv_now_epoch + 300 -%}
+          {%- set _ = errs.append(where ~ ': the verification stamp is dated in the future') -%}
+        {%- elif local_pv_now_epoch - ep > max_age * 3600 -%}
+          {%- set _ = errs.append(where ~ ': the verification stamp has expired (checked ' ~ ((local_pv_now_epoch - ep) // 3600) ~ ' hours ago, limit ' ~ max_age ~ ' hours); run check-storage.yml again') -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endif -%}
+    {%- set volumes = disk.volumes | default([], true) -%}
+    {%- if volumes | length == 0 -%}
+      {%- set _ = errs.append(where ~ ': no volumes are declared') -%}
+    {%- endif -%}
+    {%- set ns = namespace(total=0) -%}
+    {%- set subdirs = [] -%}
+    {%- for vol in volumes -%}
+      {%- set vname = vol.name | default('', true) -%}
+      {%- for key in vol.keys() if key not in ['name', 'subdir', 'capacity_gib', 'owner_uid', 'owner_gid', 'mode', 'claim'] -%}
+        {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' has unknown key ' ~ key) -%}
+      {%- endfor -%}
+      {%- if vname is not match('^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$') -%}
+        {%- set _ = errs.append(where ~ ': volume name ' ~ vname ~ ' is not a valid PersistentVolume name') -%}
+      {%- elif vname in pv_names -%}
+        {%- set _ = errs.append('volume name ' ~ vname ~ ' is declared more than once in the cluster') -%}
+      {%- endif -%}
+      {%- set _ = pv_names.append(vname) -%}
+      {%- set sub = vol.subdir | default('', true) -%}
+      {%- if sub is not match('^[a-z0-9]([-a-z0-9]{0,30}[a-z0-9])?$') -%}
+        {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' subdir must be one plain lowercase directory name (no slashes or ..)') -%}
+      {%- elif sub in subdirs -%}
+        {%- set _ = errs.append(where ~ ': subdir ' ~ sub ~ ' is used by more than one volume') -%}
+      {%- endif -%}
+      {%- set _ = subdirs.append(sub) -%}
+      {%- if vol.capacity_gib is not defined or vol.capacity_gib is not integer or vol.capacity_gib < 1 -%}
+        {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' capacity_gib must be an integer of at least 1') -%}
+      {%- else -%}
+        {%- set ns.total = ns.total + vol.capacity_gib -%}
+      {%- endif -%}
+      {%- for key in ['owner_uid', 'owner_gid'] -%}
+        {%- if vol.get(key) is not integer or vol.get(key) < 1 -%}
+          {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' ' ~ key ~ ' must be a non-root numeric id') -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set vmode = vol.mode | default('', true) | string -%}
+      {%- if vmode is not match('^0[0-7]{3}$') or vmode[3] in ['2', '3', '6', '7'] -%}
+        {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' mode must be a quoted octal string such as "0750" that is not world-writable') -%}
+      {%- endif -%}
+      {%- if vol.claim is defined -%}
+        {%- set cn = vol.claim.get('namespace', '') -%}
+        {%- set cm = vol.claim.get('name', '') -%}
+        {%- if cn is not match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') or cm is not match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$') -%}
+          {%- set _ = errs.append(where ~ ': volume ' ~ vname ~ ' claim needs a valid namespace and name') -%}
+        {%- elif (cn ~ '/' ~ cm) in claims -%}
+          {%- set _ = errs.append('claim ' ~ cn ~ '/' ~ cm ~ ' is referenced by more than one volume') -%}
+        {%- endif -%}
+        {%- set _ = claims.append(cn ~ '/' ~ cm) -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- if disk.size_bytes is defined and disk.size_bytes is integer -%}
+      {%- set usable = disk.size_bytes * (100 - (local_pv_fs_overhead_percent | int) - (local_pv_fs_reserved_percent | int)) // 100 -%}
+      {%- set budget = usable * (100 - (local_pv_free_reserve_percent | int)) // 100 -%}
+      {%- if ns.total * 1073741824 > budget -%}
+        {%- set _ = errs.append(where ~ ': declared capacities total ' ~ ns.total ~ ' GiB, above the ' ~ (budget // 1073741824) ~ ' GiB budget (estimated overhead ' ~ local_pv_fs_overhead_percent ~ '%, reserved blocks ' ~ local_pv_fs_reserved_percent ~ '%, free reserve ' ~ local_pv_free_reserve_percent ~ '%). Capacities are unenforced ceilings') -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endfor -%}
+{{ errs | to_json }}

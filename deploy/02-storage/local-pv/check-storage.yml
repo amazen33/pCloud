@@ -1,0 +1,30 @@
+---
+# READ-ONLY verification of package-managed storage on the selected nodes. It
+# changes nothing on any node. It fails closed: an absent or wrong data mount,
+# a filesystem UUID that is not the recorded one, a missing marker or volume
+# directory, a mount on the root filesystem, or a critically full filesystem is
+# a failure. Passing writes a verification stamp on the controller (only there),
+# which render-pvs.yml requires.
+#
+#   ansible-playbook -i inventory/hosts.yml check-storage.yml
+#   ansible-playbook -i inventory/hosts.yml check-storage.yml --limit rke2-worker-01
+- name: Verify the data mounts and volume directories
+  hosts: local_pv_nodes
+  gather_facts: false
+  become: true
+  vars:
+    local_pv_mode: verify
+    local_pv_live: true
+    # Verification of a disk requires its recorded UUID (the per-disk decision
+    # enforces it); it must not wait for the other nodes to be prepared.
+    local_pv_uuid_rule: any
+  tasks:
+    - name: Validate the inventory (contacts no host)
+      ansible.builtin.include_tasks: tasks/validate-inventory.yml
+
+    - name: Verify each disk declared for this node
+      ansible.builtin.include_tasks: tasks/process-disk.yml
+      loop: "{{ local_pv.disks }}"
+      loop_control:
+        loop_var: local_pv_disk
+        label: "{{ local_pv_disk.name }}"

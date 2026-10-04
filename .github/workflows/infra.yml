@@ -40,6 +40,23 @@ jobs:
       - name: Layer 1 standalone syntax and inventory checks
         run: bash tests/verify-layer1.sh
 
+  storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/02-storage/local-pv
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ansible-core
+      - name: Install pinned validation tools with checksum verification
+        run: bash ../../../tools/install-validation.sh
+      - name: Local PV standalone checks, render and schemas (formats and mounts nothing)
+        run: bash tests/verify-local-pv.sh --render
+
   kubernetes:
     runs-on: ubuntu-latest
     timeout-minutes: 5

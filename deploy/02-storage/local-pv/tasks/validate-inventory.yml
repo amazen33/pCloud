@@ -1,0 +1,38 @@
+---
+# Assemble the declared inventory from host variables and validate it.
+# Contacts no host: only assert/set_fact/lookup tasks that run on the controller.
+- name: Assemble the declared inventory
+  ansible.builtin.set_fact:
+    local_pv_inventory: >-
+      {{ local_pv_inventory | default({}) | combine({item: {
+           'address': hostvars[item].ansible_host | default(''),
+           'disks': (hostvars[item].local_pv | default({})).disks | default([]) }}) }}
+  loop: "{{ groups['local_pv_nodes'] | default([]) }}"
+  run_once: true
+
+- name: Take the current time and the digest of the current configuration
+  ansible.builtin.set_fact:
+    local_pv_now_epoch: "{{ now(utc=true).timestamp() | int }}"
+    local_pv_config_digests: "{{ lookup('ansible.builtin.template', 'config-digests.j2', template_vars={'local_pv_digest_inventory': local_pv_inventory}) | from_json }}"
+  run_once: true
+
+- name: Load verification stamps written by check-storage.yml
+  ansible.builtin.set_fact:
+    local_pv_stamps: >-
+      {{ local_pv_stamps | default({}) | combine({item.0.key ~ '/' ~ item.1.name:
+           (lookup('ansible.builtin.file', local_pv_report_dir ~ '/verified-' ~ item.0.key ~ '-' ~ item.1.name ~ '.json', errors='ignore') | default('{}', true) | from_json)}) }}
+  loop: "{{ local_pv_inventory | dict2items | subelements('value.disks') }}"
+  run_once: true
+  when: local_pv_require_stamps | default(false) | bool
+
+- name: Validate the declared inventory
+  ansible.builtin.set_fact:
+    local_pv_inventory_errors: "{{ lookup('ansible.builtin.template', 'inventory-errors.j2') | from_json }}"
+  run_once: true
+
+- name: Refuse an invalid inventory
+  ansible.builtin.assert:
+    that: local_pv_inventory_errors | length == 0
+    fail_msg: "Invalid local-PV inventory: {{ local_pv_inventory_errors | join('; ') }}"
+    quiet: true
+  run_once: true

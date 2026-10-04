@@ -27,6 +27,15 @@ revision evidence; M3a implementation can proceed independently against a
 compatible supplied cluster. Its installation cannot proceed until its own
 node, filesystem and capacity prerequisites pass.
 
+## Static local-PV profile
+
+PR #4 adds the independent [static local-PV package](../deploy/02-storage/local-pv/README.md).
+It records worker disk preparation and worker-01 temporary binding/remount
+evidence dated 2026-09-30. That record is historical; current site readiness is
+unverified and the test Kubernetes objects were removed. It does not complete
+M3a local-path acceptance or M3b/M3c/M4 deployment. Both profiles have explicit
+[selection and handover boundaries](../deploy/README.md#storage-profile-selection).
+
 ## Current bounded work
 
 M3a is defined in the [accepted lab storage ADR](adr/0001-lab-persistent-storage.md)
@@ -34,8 +43,8 @@ and the [Claude implementation work order](work-orders/M3a-lab-storage.md).
 The owner authorized Codex to implement the work in the Claude engineering
 role and selected lab completion before production. The work order covers
 code and static checks; see the [package](../deploy/02-cluster-addons/storage/local-path/README.md).
-The existing lab has no
-confirmed application-storage mount, so installation remains a later gate.
+Current mount and capacity evidence for the M3a local-path profile has not
+been confirmed; its installation remains a later gate.
 No infrastructure modification is authorized by this milestone tracker.
 The [installation proposal](work-orders/M3a-lab-install.md) lists the actual
 remaining inputs and deployment/acceptance gate; local static results are
