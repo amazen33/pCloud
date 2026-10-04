@@ -38,6 +38,12 @@ $work = Join-Path ([System.IO.Path]::GetTempPath()) ('pcloud-run-tests-' + [guid
 $repo = Join-Path $work 'repo'
 $markers = Join-Path $work 'markers'
 $results = Join-Path $work 'results'
+function Remove-TestFolder([string] $Path, [string] $Parent) {
+    $target = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    $boundary = [System.IO.Path]::GetFullPath($Parent).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $target.StartsWith($boundary, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Test cleanup target escapes its temporary parent' }
+    if (Test-Path -LiteralPath $target) { Remove-Item -Recurse -Force -LiteralPath $target }
+}
 try {
     foreach ($dir in @($markers, $results, (Join-Path $repo 'tests'), (Join-Path $repo 'pkg/a/tests'), (Join-Path $repo 'pkg/b/tests'))) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -57,6 +63,17 @@ try {
     $broken = if ($onWindows) { 'tests/broken.exe' } else { 'tests/broken' }
     Set-Content -LiteralPath (Join-Path $repo "pkg/b/$broken") -Encoding ascii -Value 'not a program'
     if (-not $onWindows) { & chmod +x (Join-Path $repo "pkg/b/$broken") }
+    $validProgram = if ($onWindows) { 'tests/valid program.exe' } else { 'tests/valid program' }
+    if ($onWindows) {
+        Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32/findstr.exe') -Destination (Join-Path $repo "pkg/b/$validProgram")
+        Set-Content -LiteralPath (Join-Path $repo 'pkg/b/data with spaces.txt') -Encoding ascii -Value 'space value'
+        $validArgs = "@('/L', '/C:space value', 'data with spaces.txt')"
+    }
+    else {
+        Set-Content -LiteralPath (Join-Path $repo "pkg/b/$validProgram") -Encoding ascii -Value "#!/bin/sh`nprintf '%s\n' `"`$1`"`n"
+        & chmod +x (Join-Path $repo "pkg/b/$validProgram")
+        $validArgs = "@('space value')"
+    }
     Set-Content -LiteralPath (Join-Path $repo 'tests/layout-manifest.json') -Encoding ascii -Value `
         '{"root_checks": ["tests/root-ok.ps1"], "packages": [{"path": "pkg/a", "test": "tests/a.ps1"}, {"path": "pkg/b", "test": "tests/b.ps1"}]}'
     $catalog = Join-Path $work 'catalog.psd1'
@@ -67,16 +84,18 @@ try {
     @{ Id = 'a-extended'; Package = 'pkg/a'; Mode = 'Static'; Extended = $true; Runner = 'powershell'; Script = 'tests/a-ext.ps1'; Needs = @('pcloud-missing-tool-7f3a') }
     @{ Id = 'a-live'; Package = 'pkg/a'; Mode = 'Live'; Runner = 'powershell'; Script = 'tests/a-live.ps1' }
     @{ Id = 'a-live-needs-file'; Package = 'pkg/a'; Mode = 'Live'; Runner = 'powershell'; Script = 'tests/a-needs.ps1'; Needs = @('file:inventory/missing.ini') }
+    @{ Id = 'a-live-needs-env'; Package = 'pkg/a'; Mode = 'Live'; Runner = 'powershell'; Script = 'tests/a-needs.ps1'; Needs = @('env:PCLOUD_TEST_TOKEN_8C902F') }
     @{ Id = 'a-smoke'; Package = 'pkg/a'; Mode = 'Smoke'; Runner = 'powershell'; Script = 'tests/a-smoke.ps1' }
     @{ Id = 'b-static'; Package = 'pkg/b'; Mode = 'Static'; Entry = $true; Runner = 'powershell'; Script = 'tests/b.ps1' }
     @{ Id = 'b-live-fail'; Package = 'pkg/b'; Mode = 'Live'; Runner = 'powershell'; Script = 'tests/b-live.ps1' }
     @{ Id = 'b-live-planned'; Package = 'pkg/b'; Mode = 'Live'; Planned = 'not written yet' }
     @{ Id = 'b-live-broken'; Package = 'pkg/b'; Mode = 'Live'; Runner = 'program'; Script = 'BROKEN' }
     @{ Id = 'b-live-missing-program'; Package = 'pkg/b'; Mode = 'Live'; Runner = 'program'; Script = 'tests/no-such-program' }
+    @{ Id = 'b-live-valid-program'; Package = 'pkg/b'; Mode = 'Live'; Runner = 'program'; Script = 'VALIDPROGRAM'; Args = VALIDARGS }
     @{ Id = 'c-static'; Package = 'pkg/c'; Mode = 'Static'; PlannedPackage = $true; Planned = 'package not created yet' }
     @{ Id = 'c-live'; Package = 'pkg/c'; Mode = 'Live'; PlannedPackage = $true; Planned = 'package not created yet' }
 ) }
-'@.Replace('BROKEN', $broken)
+'@.Replace('BROKEN', $broken).Replace('VALIDPROGRAM', $validProgram).Replace('VALIDARGS', $validArgs)
     # Only a planned-package check is available in Live mode here.
     $onlyPlanned = Join-Path $work 'only-planned.psd1'
     Set-Content -LiteralPath $onlyPlanned -Encoding ascii -Value @'
@@ -134,6 +153,8 @@ try {
     Assert ($r.Code -eq 1 -and $launch.Count -eq 1 -and $launch[0].status -eq 'FAIL' -and $launch[0].reason -like 'could not start:*' -and $null -eq $launch[0].exitCode) 'executable that cannot start after a passing check: FAIL, no stale exit code'
     $r = Invoke-Stub @('-Check', 'b-static,b-live-missing-program')
     Assert ($r.Code -eq 1 -and $r.Text -match 'FAIL\s+b-live-missing-program\s+could not start: program not found') 'missing program: FAIL, exit 1'
+    $r = Invoke-Stub @('-Check', 'b-live-valid-program')
+    Assert ($r.Code -eq 0 -and $r.Text -match 'space value') 'native program with spaces in path and arguments: executes without shell fallback'
 
     # --- statuses and exit codes -------------------------------------------------------------------
     $r = Invoke-Stub @('-Mode', 'Live', '-Package', 'pkg/b')
@@ -142,6 +163,16 @@ try {
     Assert ($r.Code -eq 3 -and $r.Text -match 'NOT IMPLEMENTED\s+b-live-planned' -and $r.Text -match 'Result: INCOMPLETE') 'required NOT IMPLEMENTED with others passing: INCOMPLETE, exit 3'
     $r = Invoke-Stub @('-Check', 'a-live-needs-file')
     Assert ($r.Code -eq 3 -and (Get-Ran).Count -eq 0 -and $r.Text -match 'input missing: inventory/missing.ini') 'missing required input: SKIP with reason, exit 3, not run'
+    $oldTestToken = [Environment]::GetEnvironmentVariable('PCLOUD_TEST_TOKEN_8C902F')
+    try {
+        [Environment]::SetEnvironmentVariable('PCLOUD_TEST_TOKEN_8C902F', $null)
+        $r = Invoke-Stub @('-Check', 'a-live-needs-env')
+        Assert ($r.Code -eq 3 -and (Get-Ran).Count -eq 0 -and $r.Text -match 'input missing: PCLOUD_TEST_TOKEN_8C902F') 'missing environment credential: INCOMPLETE and no execution'
+        [Environment]::SetEnvironmentVariable('PCLOUD_TEST_TOKEN_8C902F', 'synthetic-do-not-log-8c902f')
+        $r = Invoke-Stub @('-Check', 'a-live-needs-env')
+        Assert ($r.Code -eq 0 -and $r.Text -notmatch 'synthetic-do-not-log-8c902f') 'environment prerequisite passes without logging its value'
+    }
+    finally { [Environment]::SetEnvironmentVariable('PCLOUD_TEST_TOKEN_8C902F', $oldTestToken) }
     $r = Invoke-Stub @('-Extended')
     Assert ($r.Code -eq 3 -and $r.Text -match 'prerequisite missing: pcloud-missing-tool-7f3a') '-Extended makes a missing extended tool INCOMPLETE, exit 3'
 
@@ -163,7 +194,7 @@ try {
     Assert ($default -and $default.StartsWith($temp, [System.StringComparison]::OrdinalIgnoreCase) -and -not $default.StartsWith($repo, [System.StringComparison]::OrdinalIgnoreCase)) 'default results folder is under the system temp directory, outside the repository'
     $summary = Get-Content -LiteralPath (Join-Path $default 'summary.json') -Raw | ConvertFrom-Json
     Assert ($summary.verdict -eq 'PASS' -and $summary.exitCode -eq 0 -and @($summary.checks).Count -eq 5) 'summary.json records the verdict and every selected check'
-    if ($default) { Remove-Item -Recurse -Force -LiteralPath $default }
+    if ($default) { Remove-TestFolder $default (Join-Path $temp 'pcloud-test-results') }
 
     # --- catalog must match the manifest -----------------------------------------------------------------
     $extra = Join-Path $work 'extra-package.json'
@@ -181,17 +212,27 @@ try {
     $unsafe = @($plan | Where-Object { $_.Mode -ne 'Smoke' -and -not $_.Planned -and ((@($_.Script) + @($_.Args)) -join ' ') -match $forbidden })
     Assert ($plan.Count -gt 0 -and $unsafe.Count -eq 0) 'no Static or Live command provisions, repairs or removes infrastructure'
     $live = @($plan | Where-Object { $_.Mode -eq 'Live' -and -not $_.Planned } | ForEach-Object { $_.Id } | Sort-Object)
-    Assert ($live -join ',' -eq 'l1-live-guard-cni,l1-live-health,l1-live-inventory,s-live-check,s-live-inspect') 'only the reviewed read-only Live checks are registered'
+    $expectedLive = @('backend-live', 'l1-live-guard-cni', 'l1-live-health', 'l1-live-inventory', 'l3-live-observability', 's-live-check', 's-live-inspect', 'secrets-live', 'storage-live')
+    Assert ($live.Count -eq $expectedLive.Count -and @(Compare-Object $expectedLive $live).Count -eq 0) 'only the reviewed read-only Live checks are registered'
     $changesNodes = '(?i)prepare-disks|adopt-disks'
     $reachable = @($plan | Where-Object { ((@($_.Script) + @($_.Args)) -join ' ') -match $changesNodes })
     Assert ($reachable.Count -eq 0) 'no catalog entry runs the playbooks that format or mount disks'
     $storageLive = @($plan | Where-Object { $_.Id -like 's-live-*' })
     Assert ($storageLive.Count -eq 2 -and @($storageLive | Where-Object { (@($_.Args) -join ' ') -notmatch 'local_pv_report_dir=\{results\}' }).Count -eq 0) 'storage Live reports go to the results folder, not the package'
     $smoke = @($plan | Where-Object { $_.Mode -eq 'Smoke' -and -not $_.Planned })
-    Assert ($smoke.Count -eq 0) 'no Smoke check is implemented yet'
+    Assert ($smoke.Count -eq 4 -and (@($smoke | ForEach-Object { $_.Id } | Sort-Object) -join ',') -eq 'backend-smoke,l3-smoke-observability,secrets-smoke,storage-smoke') 'only reviewed storage, secrets, backend and observability Smoke checks are implemented'
+    Assert ((@($smoke[0].Args) -contains '--allow-cluster-changes') -and (@($smoke[0].Args) -contains '--allow-controller-restart') -and
+        (@($smoke[0].Needs) -contains 'file:review.json')) 'storage Smoke requires dispatcher consent and an explicit artifact review file'
+    $secretsSmoke = @($smoke | Where-Object { $_.Id -eq 'secrets-smoke' })[0]
+    Assert ((@($secretsSmoke.Args) -contains '--allow-cluster-changes') -and (@($secretsSmoke.Needs) -contains 'file:review.json') -and
+        (@($secretsSmoke.Needs) -contains 'env:PCLOUD_BAO_TOKEN')) 'secrets Smoke requires reviewed artifacts, consent and an operator environment token'
+    $backendSmoke = @($smoke | Where-Object { $_.Id -eq 'backend-smoke' })[0]
+    Assert ((@($backendSmoke.Args) -contains '--allow-cluster-changes') -and (@($backendSmoke.Needs) -contains 'file:review.json')) 'backend Smoke requires explicit consent and reviewed revision/artifact inputs'
+    $observeSmoke = @($smoke | Where-Object { $_.Id -eq 'l3-smoke-observability' })[0]
+    Assert ((@($observeSmoke.Args) -contains '--allow-cluster-changes') -and (@($observeSmoke.Needs) -contains 'file:review.json')) 'observability Smoke requires isolated artifact review and explicit consent'
     $l3 = @($plan | Where-Object { $_.Package -eq 'deploy/03-observability' })
-    Assert ($l3.Count -gt 0 -and @($l3 | Where-Object { -not $_.Planned }).Count -eq 0) 'every Layer 3 entry is NOT IMPLEMENTED'
-    Assert (@($l3 | Where-Object { $_.Required }).Count -eq 0) 'Layer 3 is visible but optional in a default -Mode All selection'
+    Assert ($l3.Count -eq 4 -and @($l3 | Where-Object { $_.Planned }).Count -eq 0) 'Layer 3 has four implemented package checks'
+    Assert (@($l3 | Where-Object { $_.Required }).Count -eq 4) 'Layer 3 All mode requires both Static checks, Live and Smoke'
     $r3 = Invoke-Runner @('-List', '-Json', '-Mode', 'All', '-Package', 'deploy/03-observability')
     $l3Named = @(); if ($r3.Code -eq 0) { $l3Named = @($r3.Text | ConvertFrom-Json | ForEach-Object { $_ }) }
     Assert ($l3Named.Count -eq $l3.Count -and @($l3Named | Where-Object { -not $_.Required }).Count -eq 0) 'Layer 3 named by -Package: every check required'
@@ -201,7 +242,7 @@ try {
     $health = @($plan | Where-Object { $_.Id -eq 'l1-live-health' })
     Assert ($health.Count -eq 1 -and (@($health[0].Args) -join ' ') -match 'report_dir=\{results\}') 'health report goes to the results folder, not the package'
 }
-finally { Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue }
+finally { Remove-TestFolder $work ([System.IO.Path]::GetTempPath()) }
 
 Write-Host ''
 Write-Host "$script:passed passed, $script:failed failed"

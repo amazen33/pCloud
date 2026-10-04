@@ -72,4 +72,13 @@ Removing the controller while such Services are in use causes traffic loss.
 The cluster has one physical host and one control plane. The 2026-09-28
 LoadBalancer smoke test shows that this lab package works; it does not show
 production high availability or disaster recovery. Storage and secrets are separate
-Layer 2 packages still to be designed and tested.
+Layer 2 packages. The [storage package](storage/local-path/README.md) implements
+the [accepted lab profile](../../docs/adr/0001-lab-persistent-storage.md), with
+static checks and gated live acceptance; it has no live acceptance evidence.
+The [secrets package](secrets/openbao/README.md) implements the OpenBao lab
+profile and supplied API conformance boundary, with static validation and
+pending deployment/acceptance. Storage and secrets each have their own
+render/test boundary; applying this kube-vip package installs neither.
+The [M3c filesystem backend](storage/observability-filesystem/README.md) has its
+own claims, storage-only fragments and conformance boundary; it supplies no
+S3 service and installs no LGTM servers. Its live acceptance is also pending.

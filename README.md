@@ -4,13 +4,18 @@ Reusable private-cloud deployment packages in one Git repository. Each layer con
 
 ```
 pCloud/
-  .git/                         one repository, created locally
-  .github/workflows/infra.yml    static package checks (Layers 0-2)
+  .git/                         repository metadata (registered worktrees use a pointer)
+  .github/workflows/infra.yml    static package checks (Layers 0-3)
   .github/workflows/layout.yml   layout/governance check on every change
   deploy/
     00-infra/private-hyperv/     Hyper-V provisioning and tests/
     01-k8s-engine/rke2-ansible/  Ubuntu/RKE2 configuration and tests/
+    02-storage/local-pv/         static local PVs, disk guards and tests/
     02-cluster-addons/           kube-vip manifests, tests/, evidence/
+      storage/local-path/       standalone lab storage, schemas and guarded acceptance
+      storage/observability-filesystem/  lab LGTM data/WAL claims, handover and POSIX probes
+      secrets/openbao/          standalone lab TLS/Raft secrets and guarded lifecycle
+    03-observability/           standalone lab LGTM/Collector, TLS gateway and tests/
   tests/README.md                testing guide: modes, prerequisites, checks by phase
   tests/run.ps1                  dispatcher to the package and repository checks
   tests/run.Tests.ps1            dispatcher tests
@@ -33,4 +38,24 @@ Each package can also be copied to another project and tested alone with the com
 
 For deployment prerequisites and the installation sequence, see [deploy/README.md](deploy/README.md) and each package README. Local state, credentials and real inventory must remain ignored. This reorganization does not apply any infrastructure changes.
 
-Only Layers 0-2 currently have implementation packages. Observability, storage, secrets, Kafka and APISIX remain planned; see the source evidence and limitations before making readiness claims.
+Layers 0-2 have implementation packages, including
+[lab filesystem storage](deploy/02-cluster-addons/storage/local-path/README.md).
+Storage and [lab secrets](deploy/02-cluster-addons/secrets/openbao/README.md)
+and the [observability filesystem handover](deploy/02-cluster-addons/storage/observability-filesystem/README.md)
+have local validation; no storage/secrets/backend installation or live
+acceptance is claimed. The [lab LGTM/Collector runtime](deploy/03-observability/README.md) is now
+implemented with offline validation; no Layer 3 deployment or lab acceptance.
+Kafka and APISIX remain planned.
+
+The [milestone tracker](docs/MILESTONES.md) separates design, implementation
+and lab acceptance. M3a has an [accepted lab storage design](docs/adr/0001-lab-persistent-storage.md)
+and an [implementation work order](docs/work-orders/M3a-lab-storage.md).
+The owner authorized Codex to implement that work in the Claude engineering
+role. M3a's code is available; its lab exit gate still needs a dedicated
+application-storage mount and authorized cluster acceptance. Crossplane is
+deferred; it is not a dependency of this lab.
+
+The [static local-PV package](deploy/02-storage/local-pv/README.md) is also
+implemented, with dated disk-preparation/temporary smoke evidence from
+2026-09-30. See [storage profile selection](deploy/README.md#storage-profile-selection)
+for its relationship to the local-path lab profile and current acceptance gates.

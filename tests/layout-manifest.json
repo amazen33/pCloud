@@ -1,15 +1,51 @@
 {
   "governance": {
     "contract": "docs/CONTRACT.md",
-    "pointers": ["AGENTS.md", "CLAUDE.md"]
+    "pointers": [
+      "AGENTS.md",
+      "CLAUDE.md"
+    ]
   },
-  "required_files": ["docs/PROVENANCE.md"],
+  "required_files": [
+    "docs/PROVENANCE.md"
+  ],
   "workflows_dir": ".github/workflows",
-  "root_checks": ["tests/verify-layout.py", "tests/test_verify_layout.py"],
+  "root_checks": [
+    "tests/verify-layout.py",
+    "tests/test_verify_layout.py"
+  ],
   "packages": [
-    {"path": "deploy/00-infra/private-hyperv", "test": "tests/verify.ps1"},
-    {"path": "deploy/01-k8s-engine/rke2-ansible", "test": "tests/verify-layer1.sh"},
-    {"path": "deploy/02-cluster-addons", "test": "tests/verify-layer2.py"},
-    {"path": "deploy/02-storage/local-pv", "test": "tests/verify-local-pv.sh"}
+    {
+      "path": "deploy/00-infra/private-hyperv",
+      "test": "tests/verify.ps1"
+    },
+    {
+      "path": "deploy/01-k8s-engine/rke2-ansible",
+      "test": "tests/verify-layer1.sh"
+    },
+    {
+      "path": "deploy/02-cluster-addons",
+      "test": "tests/verify-layer2.py"
+    },
+    {
+      "path": "deploy/02-storage/local-pv",
+      "test": "tests/verify-local-pv.sh"
+    },
+    {
+      "path": "deploy/02-cluster-addons/storage/local-path",
+      "test": "tests/verify-storage.py"
+    },
+    {
+      "path": "deploy/02-cluster-addons/secrets/openbao",
+      "test": "tests/verify-secrets.py"
+    },
+    {
+      "path": "deploy/02-cluster-addons/storage/observability-filesystem",
+      "test": "tests/verify-backend.py"
+    },
+    {
+      "path": "deploy/03-observability",
+      "test": "tests/verify-observability.py"
+    }
   ]
 }

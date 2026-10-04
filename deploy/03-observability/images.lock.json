@@ -1,0 +1,101 @@
+{
+  "docker.io/grafana/loki:3.7.8": {
+    "source": "docker.io/grafana/loki:3.7.8",
+    "image": "docker.io/grafana/loki@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193",
+    "manifest_sha256": "sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193",
+    "manifest_url": "https://registry-1.docker.io/v2/grafana/loki/manifests/3.7.8",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:81a6802ec4bd1b88c564494f06376889ed022998a188826190d26d2754ac2aae",
+      "config_sha256": "sha256:ceccdbc45e274f08eb23d6ca6e0b648921d580c592ab47b4304225c0f17a406a",
+      "entrypoint": [
+        "/usr/bin/loki"
+      ],
+      "command": [
+        "-config.file=/etc/loki/local-config.yaml"
+      ],
+      "user": "10001"
+    }
+  },
+  "docker.io/grafana/tempo:2.10.8": {
+    "source": "docker.io/grafana/tempo:2.10.8",
+    "image": "docker.io/grafana/tempo@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a",
+    "manifest_sha256": "sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a",
+    "manifest_url": "https://registry-1.docker.io/v2/grafana/tempo/manifests/2.10.8",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:b18e2bf60dd852ae891d721f906c15eb6af558c0e785fe82c019da4f2006f071",
+      "config_sha256": "sha256:fc94e1cd4ea54792c10d10aec1d55e68ab4b7becfeee28738807c80cd92b9ae4",
+      "entrypoint": [
+        "/tempo"
+      ],
+      "command": null,
+      "user": "10001:10001"
+    }
+  },
+  "docker.io/grafana/mimir:2.17.11": {
+    "source": "docker.io/grafana/mimir:2.17.11",
+    "image": "docker.io/grafana/mimir@sha256:2837a5444db482b47bc9355440bddaf430e177114d4d21d6c85a0916c80d504c",
+    "manifest_sha256": "sha256:2837a5444db482b47bc9355440bddaf430e177114d4d21d6c85a0916c80d504c",
+    "manifest_url": "https://registry-1.docker.io/v2/grafana/mimir/manifests/2.17.11",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:130076d0553b49dcf06a4af23d9872f86d9d06e93f0b8223af141bf8cb2f27d2",
+      "config_sha256": "sha256:7613e374242111a7f3c584bb29c4b4b290e9b17a581ede1b1eb573c2e09229b8",
+      "entrypoint": [
+        "/bin/mimir"
+      ],
+      "command": null,
+      "user": "0"
+    }
+  },
+  "docker.io/grafana/grafana:13.2.3": {
+    "source": "docker.io/grafana/grafana:13.2.3",
+    "image": "docker.io/grafana/grafana@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572",
+    "manifest_sha256": "sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572",
+    "manifest_url": "https://registry-1.docker.io/v2/grafana/grafana/manifests/13.2.3",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:d84563330dc9d2fd2bc096d0fb96021b5319c75bf6ed555566709998e823dec4",
+      "config_sha256": "sha256:fe28f8795cacedcab7a315750dc2ad6bb6f7b63ac720525cb76b15b6647a28c4",
+      "entrypoint": [
+        "/run.sh"
+      ],
+      "command": null,
+      "user": "472"
+    }
+  },
+  "docker.io/otel/opentelemetry-collector-contrib:0.161.0": {
+    "source": "docker.io/otel/opentelemetry-collector-contrib:0.161.0",
+    "image": "docker.io/otel/opentelemetry-collector-contrib@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1",
+    "manifest_sha256": "sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1",
+    "manifest_url": "https://registry-1.docker.io/v2/otel/opentelemetry-collector-contrib/manifests/0.161.0",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:b5cf983651c32c3ca13f936deb51742015a54d121f388cac248923ddeb8cc9fc",
+      "config_sha256": "sha256:0fd3483345a3fa17f3ffe760eea2413f640724c8204ea11a58c8e3927b2c0fe7",
+      "entrypoint": [
+        "/otelcol-contrib"
+      ],
+      "command": [
+        "--config",
+        "/etc/otelcol-contrib/config.yaml"
+      ],
+      "user": "10001:10001"
+    }
+  },
+  "docker.io/nginxinc/nginx-unprivileged:1.30.5-alpine": {
+    "source": "docker.io/nginxinc/nginx-unprivileged:1.30.5-alpine",
+    "image": "docker.io/nginxinc/nginx-unprivileged@sha256:ed04ec1ff34502c339ee5c3ae3f855442398edc1d05591e2b98981dcbbd20b1e",
+    "manifest_sha256": "sha256:ed04ec1ff34502c339ee5c3ae3f855442398edc1d05591e2b98981dcbbd20b1e",
+    "manifest_url": "https://registry-1.docker.io/v2/nginxinc/nginx-unprivileged/manifests/1.30.5-alpine",
+    "linux_amd64": {
+      "manifest_sha256": "sha256:f4522a5f23f9caebcae9be6e3940ea0599a2b9eb05222c7118d01fc887e848d6",
+      "config_sha256": "sha256:61640a44f99dcfd7f1af9f144f023195e82fdefd2f5aba7f917548867d4f3a6f",
+      "entrypoint": [
+        "/docker-entrypoint.sh"
+      ],
+      "command": [
+        "nginx",
+        "-g",
+        "daemon off;"
+      ],
+      "user": "101"
+    }
+  }
+}

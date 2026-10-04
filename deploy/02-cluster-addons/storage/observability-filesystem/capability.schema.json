@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "additionalProperties": false,
+  "required": ["api", "profile", "namespace", "mount_path", "run_as_uid", "run_as_group", "fs_group", "fs_group_change_policy", "volumes", "components", "fragments_sha256", "deployment_mode", "object_store_api", "replication", "backup", "quota_enforced", "acceptance"],
+  "properties": {
+    "api": {"const": "pcloud.observability-backend/v1"},
+    "profile": {"enum": ["lab-filesystem", "supplied-filesystem"]},
+    "namespace": {"type": "string"}, "mount_path": {"const": "/var/lib/pcloud/observability"},
+    "run_as_uid": {"const": 10001}, "run_as_group": {"const": 10001}, "fs_group": {"const": 10001},
+    "fs_group_change_policy": {"const": "OnRootMismatch"},
+    "volumes": {"type": "object", "additionalProperties": false, "required": ["loki", "tempo", "mimir"], "properties": {
+      "loki": {"$ref": "#/$defs/volume"}, "tempo": {"$ref": "#/$defs/volume"}, "mimir": {"$ref": "#/$defs/volume"}}},
+    "components": {"const": {"loki": "3.7.8", "tempo": "2.10.8", "mimir": "2.17.11"}},
+    "fragments_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "deployment_mode": {"const": "one-monolithic-instance-per-component"},
+    "object_store_api": {"const": null}, "replication": {"const": false}, "backup": {"const": false},
+    "quota_enforced": {"const": false}, "acceptance": {"const": "filesystem-conformance-plus-M4-ingest-query-recovery-required"}
+  },
+  "$defs": {"volume": {"type": "object", "additionalProperties": false, "required": ["claim", "worker", "size_gib"],
+    "properties": {"claim": {"type": "string"}, "worker": {"type": "string"}, "size_gib": {"type": "integer", "minimum": 1}, "uid": {"type": "string"}}}}
+}

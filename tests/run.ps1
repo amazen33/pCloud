@@ -11,7 +11,7 @@
             schemas), still without contacting any managed host or cluster.
     Live    Read-only checks against an existing environment, using each
             package's git-ignored inputs.
-    Smoke   Checks that create and remove temporary cluster resources. They
+    Smoke   Checks that change isolated cluster resources or telemetry. They
             run only with -AllowClusterChanges.
     All     Static (with -Extended), Live and Smoke. Smoke still needs
             -AllowClusterChanges; without it nothing is changed and the run
@@ -132,12 +132,66 @@ $BuiltInCatalog = @(
         Planned = 'binding a temporary claim, restarting its pod and reading the data back on a disposable disk is not implemented'
         Description = 'Local PV storage: a claim binds on the right node, data survives a pod restart, an unmounted disk fails closed' }
 
-    @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; PlannedPackage = $true
-        Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
-        Description = 'Layer 3: synthetic log/metric/trace ingest and query, service-graph edge, access controls, retention' }
-    @{ Id = 'l3-smoke-observability'; Package = 'deploy/03-observability'; Mode = 'Smoke'; PlannedPackage = $true
-        Planned = 'Layer 3 (LGTM and OpenTelemetry Collector) is planned; no package exists'
-        Description = 'Layer 3: restart, failure isolation and rollback' }
+    @{ Id = 'storage-static'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-storage.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Storage: schema, lifecycle/path/security guards, source/image locks and copied-package independence' }
+    @{ Id = 'storage-static-render'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-storage.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Storage: real local render, generated helper and restricted smoke Kubernetes schemas' }
+    @{ Id = 'storage-live'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Live'; Runner = 'python'
+        Script = 'storage.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/storage-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
+        Description = 'Storage: read-only explicit-context API checks and trusted SSH mount/capacity inspection' }
+    @{ Id = 'storage-smoke'; Package = 'deploy/02-cluster-addons/storage/local-path'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'storage.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--allow-controller-restart', '--output', '{results}/storage-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
+        Description = 'Storage: isolated run-owned persistence, Retain/rebind, affinity, controller stop/restore and helper capture; operator review required' }
+
+    @{ Id = 'secrets-static'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-secrets.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Secrets: schema, source/image locks, credential/ownership guards, simulated lifecycle and ephemeral local TLS' }
+    @{ Id = 'secrets-static-render'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-secrets.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Secrets: real Kustomize and Kubernetes 1.35.0 strict schemas for installed platform and recovery profiles' }
+    @{ Id = 'secrets-live'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Live'; Runner = 'python'
+        Script = 'bao.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/secrets-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'env:PCLOUD_BAO_TOKEN')
+        Description = 'Secrets: read-only explicit-context installation, active TLS endpoint, KV v2, Kubernetes auth and HMAC audit checks' }
+    @{ Id = 'secrets-smoke'; Package = 'deploy/02-cluster-addons/secrets/openbao'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'bao.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/secrets-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json', 'env:PCLOUD_BAO_TOKEN')
+        Description = 'Secrets: run-owned KV rotation, scoped JWT/token denial and audit checks; remains INCOMPLETE until operator restart/restore evidence' }
+
+    @{ Id = 'backend-static'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-backend.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Backend: schemas, supported fragments/locks, copied package and simulated lifecycle; Linux additionally runs real POSIX fixtures' }
+    @{ Id = 'backend-static-render'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-backend.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Backend: real Kustomize/strict Kubernetes 1.35.0 schemas for claims and every restricted probe action; Windows reports POSIX skips' }
+    @{ Id = 'backend-live'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Live'; Runner = 'python'
+        Script = 'backend.py'; Args = @('live', '--site', 'site.json', '--output', '{results}/backend-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json')
+        Description = 'Backend: read-only class, worker, namespace/claim/volume identity and affinity checks; INCOMPLETE until POSIX/M4 acceptance' }
+    @{ Id = 'backend-smoke'; Package = 'deploy/02-cluster-addons/storage/observability-filesystem'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'backend.py'; Args = @('smoke', '--site', 'site.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/backend-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:review.json')
+        Description = 'Backend: isolated POSIX write/remount/UID denial, scoped cleanup and retained test PV inventory; operator disposition and M4 still required' }
+
+    @{ Id = 'l3-static-observability'; Package = 'deploy/03-observability'; Mode = 'Static'; Entry = $true; Runner = 'python'
+        Script = 'tests/verify-observability.py'; Needs = @('python', 'pyyaml', 'jsonschema')
+        Description = 'Layer 3: schemas, runtime contracts, access routes, copied package and simulated signal/graph/alert acceptance' }
+    @{ Id = 'l3-static-render'; Package = 'deploy/03-observability'; Mode = 'Static'; Extended = $true; Runner = 'python'
+        Script = 'tests/verify-observability.py'; Args = @('--render'); Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'kubeconform')
+        Description = 'Layer 3: real Kustomize and strict Kubernetes 1.35.0 schemas for all lab runtime resources' }
+    @{ Id = 'l3-live-observability'; Package = 'deploy/03-observability'; Mode = 'Live'; Runner = 'python'
+        Script = 'observability.py'; Args = @('live', '--site', 'site.json', '--backend', 'backend-capability.json', '--fragments', 'backend-fragments.json', '--output', '{results}/observability-live.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:backend-capability.json', 'file:backend-fragments.json', 'env:PCLOUD_OBSERVE_INGEST', 'env:PCLOUD_OBSERVE_QUERY', 'env:PCLOUD_OBSERVE_ADMIN')
+        Description = 'Layer 3: read-only runtime drift/health, trusted TLS and query role denials; full acceptance remains INCOMPLETE' }
+    @{ Id = 'l3-smoke-observability'; Package = 'deploy/03-observability'; Mode = 'Smoke'; Runner = 'python'
+        Script = 'observability.py'; Args = @('smoke', '--site', 'site.json', '--backend', 'backend-capability.json', '--fragments', 'backend-fragments.json', '--review', 'review.json', '--allow-cluster-changes', '--output', '{results}/observability-smoke.json')
+        Needs = @('python', 'pyyaml', 'jsonschema', 'kubectl', 'file:site.json', 'file:backend-capability.json', 'file:backend-fragments.json', 'file:review.json', 'env:PCLOUD_OBSERVE_INGEST', 'env:PCLOUD_OBSERVE_QUERY', 'env:PCLOUD_OBSERVE_ADMIN')
+        Description = 'Layer 3: isolated reviewed test-stack OTLP ingest/query, correlation, service graph and firing alert; receiver/retention/recovery/soak still required' }
+
 )
 
 function Exit-Usage([string] $Message) {
@@ -179,6 +233,55 @@ function Invoke-Native([string] $Exe, [string[]] $Arguments) {
     $ErrorActionPreference = 'Continue'
     $output = @(& $Exe @Arguments 2>&1 | ForEach-Object { ConvertTo-Line $_ })
     return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $output }
+}
+
+# Program checks must use CreateProcess, never Windows' application-chooser
+# fallback for invalid executables. Both output streams drain concurrently.
+function Invoke-Program([string] $Exe, [string[]] $Arguments) {
+    if ($onWindows) {
+        # Reject plain text disguised as .exe before Windows error handling
+        # can invoke an interactive file handler. Program means a PE binary;
+        # PowerShell and Bash scripts use their dedicated catalog runners.
+        $stream = [System.IO.File]::OpenRead($Exe)
+        $reader = New-Object System.IO.BinaryReader($stream)
+        try {
+            if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { throw 'invalid native executable header' }
+            $stream.Position = 0x3C
+            $offset = $reader.ReadInt32()
+            if ($offset -lt 64 -or $offset -gt $stream.Length - 4) { throw 'invalid native executable header' }
+            $stream.Position = $offset
+            if ($reader.ReadUInt32() -ne 0x4550) { throw 'invalid native executable header' }
+        }
+        finally { $reader.Dispose(); $stream.Dispose() }
+    }
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Exe
+    $start.WorkingDirectory = (Get-Location).Path
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    if ($start.PSObject.Properties['ArgumentList']) {
+        foreach ($word in $Arguments) { $start.ArgumentList.Add($word) }
+    }
+    else {
+        # Windows CommandLineToArgvW rules for .NET Framework / PowerShell 5.1.
+        $start.Arguments = (@($Arguments | ForEach-Object {
+            if ($_ -ne '' -and $_ -notmatch '[\s"]') { $_ }
+            else { '"' + ([regex]::Replace([regex]::Replace($_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1')) + '"' }
+        }) -join ' ')
+    }
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $start
+    try {
+        [void] $process.Start()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $lines = @(($stdout.Result + "`n" + $stderr.Result) -split '\r?\n' | Where-Object { $_ -ne '' })
+        return [pscustomobject]@{ Code = $process.ExitCode; Output = $lines }
+    }
+    finally { $process.Dispose() }
 }
 
 # --- repository, manifest and catalog ---------------------------------------------------
@@ -340,6 +443,10 @@ function Get-MissingNeed($C, [string] $Cwd) {
                 if (-not $probeCache.ContainsKey('pyyaml')) { $probeCache['pyyaml'] = (Find-Python) -and (Invoke-Native (Find-Python) @('-c', 'import yaml')).Code -eq 0 }
                 if (-not $probeCache['pyyaml']) { return 'prerequisite missing: PyYAML (python -m pip install PyYAML==6.0.3)' }
             }
+            'jsonschema' {
+                if (-not $probeCache.ContainsKey('jsonschema')) { $probeCache['jsonschema'] = (Find-Python) -and (Invoke-Native (Find-Python) @('-c', 'import jsonschema')).Code -eq 0 }
+                if (-not $probeCache['jsonschema']) { return 'prerequisite missing: jsonschema (python -m pip install jsonschema==4.25.1)' }
+            }
             'linux-bash' {
                 if ($onWindows) { if (-not (Test-WslCommand 'true')) { return 'prerequisite missing: Bash checks run on Linux or in WSL; wsl.exe with a Linux distribution was not found' } }
                 elseif (-not (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue)) { return 'prerequisite missing: bash' }
@@ -351,6 +458,9 @@ function Get-MissingNeed($C, [string] $Cwd) {
             'file:*' {
                 $relative = $need.Substring(5)
                 if (-not (Test-Path -LiteralPath (Join-Path $Cwd $relative))) { return "input missing: $relative (git-ignored; prepare it as the package README describes)" }
+            }
+            'env:*' {
+                if (-not [Environment]::GetEnvironmentVariable($need.Substring(4))) { return "input missing: $($need.Substring(4)) (operator environment; never a command argument)" }
             }
             default { if (-not (Get-Command $need -CommandType Application -ErrorAction SilentlyContinue)) { return "prerequisite missing: $need" } }
         }
@@ -412,7 +522,7 @@ foreach ($c in $selected) {
     Write-Host ''
     Write-Host "== $($c.Id) [$($c.Mode)] $($c.Package)"
     if ($c.Mode -eq 'Smoke' -and -not $AllowClusterChanges) {
-        $record.status = 'SKIP'; $record.reason = 'consent missing: Smoke creates cluster resources; add -AllowClusterChanges'
+        $record.status = 'SKIP'; $record.reason = 'consent missing: Smoke changes cluster resources or telemetry; add -AllowClusterChanges'
     }
     elseif (Get-Value $c 'Planned' '') {
         $record.status = 'NOT IMPLEMENTED'; $record.reason = $c.Planned
@@ -442,8 +552,15 @@ foreach ($c in $selected) {
                 $argv = @($command.Argv)
                 # A launch failure leaves no exit code; never read one left by an earlier check.
                 $global:LASTEXITCODE = $null
-                & $program.Source @argv 2>&1 | ForEach-Object { $line = ConvertTo-Line $_; $lines.Add($line); Write-Host "   | $line" }
-                $exitCode = $global:LASTEXITCODE
+                if ($c.Runner -eq 'program') {
+                    $executed = Invoke-Program $program.Source $argv
+                    foreach ($line in $executed.Output) { $lines.Add($line); Write-Host "   | $line" }
+                    $exitCode = $executed.Code
+                }
+                else {
+                    & $program.Source @argv 2>&1 | ForEach-Object { $line = ConvertTo-Line $_; $lines.Add($line); Write-Host "   | $line" }
+                    $exitCode = $global:LASTEXITCODE
+                }
                 if ($null -eq $exitCode) { throw "$($command.Exe) did not run to an exit code" }
                 $record.exitCode = $exitCode
                 $record.status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
@@ -482,7 +599,7 @@ foreach ($r in $records) {
 }
 if ($records.Count -eq 0) { Write-Host 'No checks match this selection; nothing was run.' }
 elseif ($executed.Count -eq 0) { Write-Host 'No check was executed.' }
-if ($smokeBlocked) { Write-Host 'Smoke checks were not run: they create cluster resources and need -AllowClusterChanges. Nothing was changed.' }
+if ($smokeBlocked) { Write-Host 'Smoke checks were not run: they change cluster resources or telemetry and need -AllowClusterChanges. Nothing was changed.' }
 Write-Host ("Result: {0} ({1} passed, {2} failed, {3} skipped, {4} not implemented; {5} required check(s) did not run)" -f `
         $verdict, (& $count 'PASS'), (& $count 'FAIL'), (& $count 'SKIP'), (& $count 'NOT IMPLEMENTED'), $notRun.Count)
 

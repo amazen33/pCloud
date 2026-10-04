@@ -1,0 +1,10 @@
+{
+  "local-path-storage.yaml": {
+    "url": "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml",
+    "sha256": "9781b39c24f3f651bd6d6e41b561e04e4904bbdb6d4f8c7a6009df3a702dcd65"
+  },
+  "LICENSE": {
+    "url": "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/LICENSE",
+    "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+  }
+}

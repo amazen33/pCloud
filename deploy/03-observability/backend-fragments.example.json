@@ -1,0 +1,101 @@
+{
+  "loki": {
+    "common": {
+      "path_prefix": "/var/lib/pcloud/observability/loki",
+      "storage": {
+        "filesystem": {
+          "chunks_directory": "/var/lib/pcloud/observability/loki/chunks",
+          "rules_directory": "/var/lib/pcloud/observability/loki/rules"
+        }
+      }
+    },
+    "schema_config": {
+      "configs": [
+        {
+          "from": "2024-01-01",
+          "store": "tsdb",
+          "object_store": "filesystem",
+          "schema": "v13",
+          "index": {
+            "prefix": "index_",
+            "period": "24h"
+          }
+        }
+      ]
+    },
+    "storage_config": {
+      "tsdb_shipper": {
+        "active_index_directory": "/var/lib/pcloud/observability/loki/index",
+        "cache_location": "/var/lib/pcloud/observability/loki/index-cache"
+      }
+    },
+    "ingester": {
+      "wal": {
+        "enabled": true,
+        "dir": "/var/lib/pcloud/observability/loki/wal"
+      }
+    },
+    "compactor": {
+      "working_directory": "/var/lib/pcloud/observability/loki/compactor"
+    },
+    "ruler": {
+      "rule_path": "/var/lib/pcloud/observability/loki/ruler-cache"
+    }
+  },
+  "tempo": {
+    "storage": {
+      "trace": {
+        "backend": "local",
+        "wal": {
+          "path": "/var/lib/pcloud/observability/tempo/wal"
+        },
+        "local": {
+          "path": "/var/lib/pcloud/observability/tempo/blocks"
+        }
+      }
+    },
+    "metrics_generator": {
+      "storage": {
+        "path": "/var/lib/pcloud/observability/tempo/generator-wal"
+      },
+      "traces_storage": {
+        "path": "/var/lib/pcloud/observability/tempo/generator-traces"
+      }
+    }
+  },
+  "mimir": {
+    "blocks_storage": {
+      "backend": "filesystem",
+      "filesystem": {
+        "dir": "/var/lib/pcloud/observability/mimir/blocks"
+      },
+      "tsdb": {
+        "dir": "/var/lib/pcloud/observability/mimir/tsdb"
+      },
+      "bucket_store": {
+        "sync_dir": "/var/lib/pcloud/observability/mimir/tsdb-sync"
+      }
+    },
+    "compactor": {
+      "data_dir": "/var/lib/pcloud/observability/mimir/compactor"
+    },
+    "ruler": {
+      "rule_path": "/var/lib/pcloud/observability/mimir/ruler-cache"
+    },
+    "ruler_storage": {
+      "backend": "filesystem",
+      "filesystem": {
+        "dir": "/var/lib/pcloud/observability/mimir/rules"
+      }
+    },
+    "alertmanager_storage": {
+      "backend": "filesystem",
+      "filesystem": {
+        "dir": "/var/lib/pcloud/observability/mimir/alertmanager-bucket"
+      }
+    },
+    "alertmanager": {
+      "data_dir": "/var/lib/pcloud/observability/mimir/alertmanager-runtime"
+    }
+  }
+}

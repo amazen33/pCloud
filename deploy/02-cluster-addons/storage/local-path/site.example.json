@@ -1,0 +1,14 @@
+{
+  "profile": "node-local-lab",
+  "context": "REPLACE-WITH-REVIEWED-CONTEXT",
+  "storage_root": "/var/lib/pcloud/storage/app",
+  "nodes": [
+    {"name": "worker-example", "ssh": "admin@192.0.2.21", "filesystem_uuid": "00000000-0000-0000-0000-000000000001"}
+  ],
+  "capacity": {"projected_bytes": 1073741824, "minimum_free_bytes": 2147483648, "reserve_fraction": 0.2},
+  "host_capacity": {"observed_unix_seconds": 0, "free_bytes": 107374182400, "projected_growth_bytes": 21474836480, "minimum_free_bytes": 21474836480},
+  "resources": {
+    "controller": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "250m", "memory": "128Mi"}},
+    "helper": {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "32Mi"}}
+  }
+}

@@ -9,8 +9,8 @@ any other package, and never touches the RKE2 data directory.
 **Status: offline checks pass; both Hyper-V lab worker disks were prepared and
 verified on 2026-09-30.** A temporary Kubernetes PVC and pod bound to worker-01,
 kept data across pod replacement, refused to start while the disk was unmounted,
-and recovered after remount. The test objects were removed; the StorageClass and
-PVs are not installed now. This is single-host lab evidence, not HA or production
+and recovered after remount. The test objects and StorageClass/PVs were removed after that run; current
+live state has not been rechecked. This is single-host lab evidence, not HA or production
 readiness. The committed inventory remains synthetic; the real inventory and
 verification reports are git-ignored on the lab controller.
 
@@ -25,6 +25,16 @@ snapshots, quotas or high availability, and a lost node or disk loses its data.
 | `check-storage.yml` | Verifies the data mount, filesystem, markers, volume directories and free space; fails closed | No |
 | `render-pvs.yml` | Renders the PersistentVolume manifests for review, on the controller only | No node, no cluster |
 | `kubernetes/` | The `pcloud-local` StorageClass (static, `WaitForFirstConsumer`, Retain) | Applied by a person |
+
+## Profile boundary
+
+This package owns static `pcloud-local` volumes. The independently versioned
+local-path lab package owns `pcloud-local-retain`; its inventories, markers,
+capability and acceptance are separate. Historical evidence here does not
+qualify a local-path installation or migrate claims/data. Select one explicit
+class and claim handover per consumer, allocate distinct volume directories,
+and account for combined capacity when sharing a disk. This package remains
+self-contained and consumes no sibling package files or state.
 
 ## Test this package (offline)
 
@@ -242,6 +252,10 @@ tests/                              verify-local-pv.sh, check-logic.yml, scenari
   PVs, StorageClass and test file were removed. The final storage check passed.
 
 ## Limitations
+
+The [2026-10-04 integration checks](evidence/2026-10-04-integration.md)
+record the fresh offline/render and shared dispatcher validation against
+the merged M3/M4 implementation. They do not refresh the live lab evidence.
 
 - This is one single-host Hyper-V/RKE2 lab run. Worker-02's Kubernetes binding
   and missing-mount behaviour, other host types, upgrade/replacement and disk

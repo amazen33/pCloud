@@ -1,326 +1,215 @@
-# Layer 3: shared observability (planning only)
+# Layer 3: standalone LGTM / OpenTelemetry lab package
 
-**Status: NOT IMPLEMENTED.** This directory contains only this planning
-document. There is no manifest, chart, values file, installer, inventory,
-package test or evidence. No pCloud Layer 3 installation has been
-verified, and this document claims none. It is deliberately not listed in
-`tests/layout-manifest.json`, because it is not a package yet. The
-dispatcher lists its two future checks (`l3-live-observability`,
-`l3-smoke-observability`) as NOT IMPLEMENTED; see
-[tests/README.md](../../tests/README.md). Rendering manifests or passing CI
-would not complete this phase (`docs/CONTRACT.md` section E).
+**Implementation available; no pCloud cluster deployment or lab acceptance.**
+This package renders one Loki, Tempo, Mimir, Grafana, Collector and TLS gateway
+instance, using explicit M3c filesystem handovers. It has its own schemas,
+image locks, tests and lifecycle documentation. It imports no sibling package
+and reads no other product's state. See the [decision](../../docs/adr/0004-lab-observability-runtime.md)
+and [work order](../../docs/work-orders/M4-lab-observability.md).
 
-The direction is the existing one: the OpenTelemetry Collector feeding
-Loki (logs), Tempo (traces) and Mimir (metrics), with Grafana for query,
-dashboards and the Tempo-based service graph. It was decided in IOT-EE
-(its ADR 0015 and proposed installation-sequence ADR). The ownership
-boundary itself already exists in `docs/CONTRACT.md` section C, and
-[the proposed ownership ADR](../../docs/adr/XXXX-proposed-pcloud-iot-ee-ownership-and-observability-boundary.md)
-records how it applies here. The installation and the published capability
-contract described below remain planned. This document selects no new
-tool, version, chart or storage backend; choices that are still open are
-listed as such.
+## Scope and supported profile
 
-## 1. Scope and capabilities
+Only `lab` is implemented. `purpose=platform` is the platform installation;
+`purpose=conformance` is an independently installed disposable test stack in
+`pcloud-observe-test-*`. Production, external-stack conformance, HA, object
+storage, automatic upgrades, backups and automatic host/cluster modifications
+are not implemented. pCloud owns installation and platform health. IOT-EE owns
+its instrumentation, application configuration, domain dashboards and alerts.
 
-pCloud owns installation, upgrade, operation, backup and restore, platform
-health, platform dashboards and platform-level alerts for the shared stack.
-It does not own service instrumentation, IoT or domain dashboards, business
-alerts or application SLOs; those belong to IOT-EE and are out of scope
-here. This phase installs nothing for any application.
-
-Planned capabilities, each of which must be provable without IOT-EE code:
-
-| Capability | Meaning |
-| --- | --- |
-| Ingest | An OTLP endpoint accepts traces, logs and metrics from workloads |
-| Store and query | Each signal can be queried back through a documented endpoint |
-| Service graph | Paired synthetic client and server spans produce a service-to-service edge |
-| Dashboards and alerts | Platform health dashboards exist; a platform alert reaches a receiver |
-| Access control | Ingest, query and administration are separately authorized |
-| Retention | Each signal has a declared retention, applied and observable |
-| Recovery | Components restart, ingestion resumes, and a failed component does not harm other layers |
-| Capability contract | pCloud publishes the versioned endpoints, access boundaries and limits a consumer relies on |
-
-Out of scope for this phase: application instrumentation, Kafka, APISIX,
-network-flow tools such as Cilium/Hubble (a separate cluster-networking
-decision that does not replace the application service graph), and any
-change to Layers 0-2.
-
-## 2. Deployment profiles
-
-Profile selection is explicit (`docs/CONTRACT.md` section D). None of these
-profiles is implemented.
-
-| Profile | Intent | Status |
+| Component | Pinned release | Role |
 | --- | --- | --- |
-| `lab` | The Layer 3 package on the single-host lab cluster: minimal replicas, short retention, owner-approved soak. Proves function only | Planned; needs the prerequisites in section 3 |
-| `existing-cluster` | The same package on another compatible cluster that already satisfies the prerequisites | Planned |
-| `external` | Layer 3 is not installed. The environment supplies the endpoints of an existing stack; pCloud verifies conformance with the live acceptance tests and installs none of the stack's backend dependencies | Planned; conformance tests not written |
-| `production` | Highly available, capacity-planned, disaster-recovery-tested, operated 24x7 | Not designed; separate evidence required (section 9) |
+| Loki | 3.7.8 | Native OTLP log storage / query |
+| Tempo | 2.10.8 | Trace storage and paired-span service graphs |
+| Mimir | 2.17.11 | Metrics, platform rules and Alertmanager |
+| Grafana OSS | 13.2.3 | Provisioned data sources and platform dashboard |
+| Collector contrib | 0.161.0 | HTTP OTLP gateway and bounded metrics scrape/export |
+| nginx unprivileged | 1.30.5-alpine | TLS and separate ingest/query/admin authorization |
 
-An alternative stack is compatible only when it passes the live acceptance
-checks in section 7; it is not called a drop-in replacement without that
-evidence.
+`images.lock.json` records verified OCI index and Linux-amd64 manifest/config
+digests, entrypoints and original image users. Workloads explicitly run UID/GID
+10001 with fsGroup 10001, restricted Pod Security, read-only root filesystems,
+no privilege escalation, dropped capabilities and no service-account token.
+The runtime UID overrides Grafana/nginx/Mimir defaults; the local executable
+exercise is distinct from verifying those permissions on the real PVCs.
 
-## 3. Prerequisites and predecessor outputs
+No Helm chart is required: render produces local resources; Kustomize and
+strict Kubernetes 1.35.0 schemas validate them. Rendering fetches no artifacts.
+Backend services are ClusterIP only. There are no cluster RBAC resources,
+DaemonSets, host paths, external plugins or privileged init containers.
+Grafana plugin preinstallation/automatic updates, plugin administration, remote
+key retrieval and update checks are disabled. Alerting is owned by Mimir;
+Grafana-managed alerting is disabled in this profile. Mimir explicitly starts
+`all,alertmanager`: the `all` module set alone omits Alertmanager.
 
-Layer 3 consumes outputs from earlier phases and never reads their working
-directories or state. Prerequisites depend on the profile (section 2).
+## Prerequisites and explicit inputs
 
-**Installed profiles** (`lab`, `existing-cluster`, `production`) need the
-following. The storage and secret-management capabilities must be
-appropriate to the design chosen for the profile; that design is open, and
-a simpler form may be acceptable in the lab if its data-loss effect is
-stated.
+1. Kubernetes 1.35, healthy untainted workers and a CNI that actually enforces
+   ingress and egress NetworkPolicy. The lab's historical records do not prove
+   these gates for this patch.
+2. Accepted M3a Retain / WaitForFirstConsumer filesystem class, capacity and
+   node-mount evidence, or a compatible accepted supplied capability.
+3. Accepted M3b secret custody / rotation capability or a supplied equivalent.
+   This package consumes existing Kubernetes Secrets: it does not store an
+   OpenBao root token, initialize a secret server or automatically synchronize
+   secret contents. An authorized operator must deliver and rotate them.
+4. M3c exports `backend-capability.json` and `backend-fragments.json`. Operator
+   exports are copied explicitly into this package's ignored input locations,
+   never read from a sibling working directory. Their namespace matches the
+   runtime namespace; original versions, fragment hash and schema must match.
+   See [the interface snapshot](contracts/README.md). Each backend has a distinct
+   existing claim pinned to its chosen worker; this package creates only the
+   separate Grafana claim. M3c owns the namespace and backend claims.
+5. `site.json`, based on `site.example.json`: context, namespace, purpose,
+   gateway hostname/HTTPS origin, trusted client CA path, explicit worker and
+   storage settings, Secret names, consumer and alert CIDRs, HTTPS alert
+   receiver, retention, resource budget, query deadline and proposed soak.
+6. A route from the operator/application network to the gateway ClusterIP,
+   through a separately reviewed exposure configuration. This package creates
+   no LoadBalancer, ingress or NAT changes. External routing must preserve
+   gateway TLS and the original client-address policy; verify SNAT/CNI effects.
 
-| Needed | From | Current status |
+The example requests total 700m CPU / 1344Mi RAM, with limits 3200m / 2688Mi,
+and adds a 2Gi Grafana claim to the 16Gi backend requests. These are provisional
+lab settings, not measured capacity or enforceable filesystem quotas. Budget
+free bytes/inodes and host thin-disk allocation, alongside OpenBao and RKE2.
+Example retention is 24h for each signal; proposed soak is 24h. Operator review
+must accept actual capacity, retention and soak before installation.
+
+### Existing Secret contracts
+
+All four Secrets exist in the runtime namespace and have separate names.
+No plaintext values, private keys, htpasswd files or generated Secret YAML
+belong in Git or test reports. Use the accepted custody mechanism to deliver:
+
+| Secret input | Required keys | Purpose |
 | --- | --- | --- |
-| A healthy Kubernetes cluster and API access | Layer 1, or an existing cluster | The lab cluster ran healthy on 2026-09-27; that is earlier-installation evidence only |
-| A way to expose in-cluster services to consumers | Layer 2 kube-vip, an existing load balancer or ingress | kube-vip installed and smoke-tested in the lab on 2026-09-28 |
-| Persistent storage with a stated reclaim policy | A Layer 2 storage package or the environment | **Not designed**; no storage class is confirmed in the lab |
-| Durable storage for logs, traces and metrics (object storage, or a stated alternative) | Layer 2 or the environment | **Not designed**; the backend is an open choice |
-| Secret management for credentials and tokens | Layer 2 or the environment | **Not designed** |
-| Capacity for the components and their data | The target environment | Not measured; the lab has one physical host and 20 GiB unmounted secondary disks |
-| Pinned component versions and licences approved by the owner | The owner | Not chosen; several LGTM components are AGPLv3 and the licence position needs owner review before a non-lab profile selects them |
-| Namespace and Pod Security decision | This phase | Open (restricted Pod Security is the default expectation; any exception needs a recorded reason) |
+| `tls_secret` | `tls.crt`, `tls.key` | Valid server chain/private key; SAN matches gateway hostname |
+| `access_secret` | `ingest.htpasswd`, `query.htpasswd`, `admin.htpasswd` | Separate strong passwords/user sets per role; compatible crypt hashes |
+| `grafana_secret` | `admin-password`, `secret-key` | Grafana admin login and stable encryption/signing key |
+| `alert_secret` | `token`, `ca.crt` | Alert webhook bearer credential and trusted receiver CA |
 
-An installed profile cannot start until the storage and secret-management
-capabilities its design requires exist.
+Only the gateway mounts role hashes/TLS key; only Grafana mounts its login/key;
+only Mimir mounts the webhook token/CA. Mount mode is 0440 / fsGroup 10001.
+Preflight reads Secret metadata only: contents, validity, distinct role files
+and rotation must be verified under operator custody. Basic credentials have
+separate role files; reusing users/passwords across them defeats separation
+and fails live negative checks. Grafana UI needs gateway admin auth plus its
+own login; disable sign-up and anonymous access. Local users are the lab
+identity profile; SSO/team roles remain future work. Grafana sessions and
+plugin/data-source administration are accessible only through the admin route.
 
-**External profile.** pCloud installs nothing, so none of the storage,
-object-storage or secret-management rows above apply to it. It needs:
+## Access and capability contract
 
-| Needed | From | Current status |
+`python observability.py capability --site site.json --backend backend-capability.json --fragments backend-fragments.json`
+exports `pcloud.observability/v1`: versions, artifact hash, endpoint/auth
+boundaries, retention and loss limits. Publish the reviewed export through an
+operator-controlled artifact channel; consumers configure it explicitly.
+
+| Gateway path | Authorized credential | Allowed operation |
 | --- | --- | --- |
-| The endpoints of the existing stack: ingest, log, metric and trace query, Grafana | The environment operator | Not supplied; no such environment is identified |
-| Credentials and the CA certificate, supplied through explicit environment configuration | The environment operator | Not supplied; never committed |
-| Permission to run the conformance checks, including a designated isolated test scope for synthetic writes | The environment operator | Not agreed; without it the write-based checks end SKIP and the run is incomplete |
-| The live acceptance checks in section 7 | pCloud | **NOT IMPLEMENTED** |
+| `/ingest/v1/logs`, `/ingest/v1/traces`, `/ingest/v1/metrics` | ingest | POST OTLP/HTTP only |
+| `/query/loki/...`, `/query/tempo/...`, `/query/mimir/prometheus/...` | query | Allowlisted GET query/health endpoints only |
+| `/grafana/` | gateway admin plus Grafana login | Grafana administration/UI |
 
-## 4. Configuration inputs
+Unknown routes return 404; disallowed methods return 405. Backend auth and
+client tenant headers are stripped. There is one trusted platform scope:
+**no IOT tenant isolation or user-to-tenant mapping is claimed**. All authorized
+query users can read all data. Do not expose this profile to mutually
+untrusted tenants. TLS 1.2+ protects client-to-gateway traffic; backend traffic
+is plaintext inside the isolated namespace. Cluster/network administrators
+can bypass it. This is an explicit constrained-lab trust model.
 
-Inputs are explicit, git-ignored where they hold site data or credentials,
-and documented with an example file when a package exists. Planned inputs:
+The Collector accepts HTTP OTLP only (JSON/protobuf), not public OTLP/gRPC.
+It exports native Loki OTLP, Tempo OTLP/HTTP and Prometheus remote write to
+Mimir. Platform YAML rules use Mimir's read-only `local` rule loader from an
+immutable ConfigMap; this explicitly replaces M3c's optional filesystem rule
+bucket fragment. Signal blocks/WAL and Alertmanager storage keep the persistent
+M3c paths. Rule-management APIs stay disabled.
 
-- target cluster access (kubeconfig or context), namespace names, and the
-  chosen profile;
-- storage class and object-storage settings, with sizes and reclaim policy;
-- retention per signal, ingest and query limits, and resource requests and
-  limits per component;
-- exposure: hostnames or addresses, TLS material, and the network paths
-  consumers use;
-- authentication and authorization: identity source for Grafana users,
-  credentials for ingest and query, and roles;
-- alert routing: the receiver for platform alerts;
-- component versions, recorded and pinned.
+Batches are bounded at 256 records; exporter queues at 256 batches,
+with one consumer and 30s maximum retries. Memory limiting precedes batching.
+Queues are in-memory: restart, overflow, rejected telemetry and outages beyond
+the retry window can lose data. Consumers must configure bounded asynchronous
+export/retry and let application work proceed during an observability outage.
+No durable Collector replay guarantee is made. Metric resource promotion is
+restricted to service name/namespace; arbitrary input metric labels still need
+application cardinality discipline and Mimir limits. Synthetic metrics have
+fixed labels, never run IDs. Loki indexes only service name/namespace; run and
+trace identifiers stay structured metadata. Tempo generates service graphs
+and span metrics, which Mimir stores; Grafana Tempo serviceMap points to Mimir.
 
-For the external profile the inputs are instead the supplied endpoints,
-credentials and CA certificate, and the designated test scope for the
-conformance checks; there is no cluster, storage or component-version input
-because pCloud installs nothing.
+## Offline validation
 
-Credentials are supplied at install time through the environment's secrets
-mechanism. They are never committed and never written to test results or
-evidence.
+From any working directory (substitute the package path):
 
-**Outputs.** The phase produces the capability contract for consumers: the
-ingest endpoint and protocols, the log, metric and trace query endpoints,
-the Grafana address, the authentication method, tenancy or scoping headers
-if used, declared retention and limits, and the CA certificate for TLS.
-Its format, versioning scheme and publication location are not decided
-(section 9). A consumer receives these values through its own explicit
-environment configuration.
+```powershell
+python -m pip install -r requirements.txt
+python tests/verify-observability.py
+python tests/verify-observability.py --render
+```
 
-## 5. Installation and upgrade
+The direct CI entry is `python deploy/03-observability/tests/verify-observability.py --render`.
+`--render` needs kubectl 1.35.0 and kubeconform 0.7.0, and downloads public
+Kubernetes schemas if uncached; it contacts no cluster. Tests cover schemas,
+explicit handover/digest, storage/retention, pinned source bytes, access routes,
+restricted workloads, copied-package execution and simulated signal/graph/alert
+lifecycle. They do not establish server startup or live acceptance.
 
-Not written. Constraints the future package must meet:
+Optional Linux executable exercise (large public artifact downloads):
 
-- installation is an explicit, separately approved operation against a
-  named cluster and a reviewed revision; static CI never applies anything;
-- artifacts are static and rendered in CI (the tool is an open choice) and
-  schema-validated, like Layer 2, with component and schema versions pinned
-  and recorded;
-- components run under restricted Pod Security or a reviewed, labelled
-  exception, with resource requests and limits set;
-- installation runs behind a review of the rendered output and a diff
-  against the cluster, and produces a recorded inventory and version set;
-- upgrades change one reviewed version set at a time, are rehearsed in
-  the lab first, and state their data-compatibility effect;
-- the package is self-contained: its own inputs, tests and documentation,
-  no dependence on another package's state.
+```bash
+python tests/fetch-runtime.py --directory /tmp/pcloud-observe-runtime-unique
+python tests/validate-runtime.py --directory /tmp/pcloud-observe-runtime-unique
+```
 
-## 6. Static validation
+Use a new child of the Linux temporary directory (`/tmp`, or `TMPDIR=/var/tmp`
+where WSL clears /tmp between sessions). The fetcher verifies immutable Linux image manifests and
+each layer checksum, extracts only needed executable/config/library
+files and archive-validated library aliases, and uses no container daemon. The exercise creates synthetic temporary
+files, locally generated test-only TLS/credentials, and loopback processes;
+root execution drops child processes to UID/GID 10001. It rewrites component
+DNS/path/port settings to avoid local conflicts, so it is not proof of the
+unmodified container/PVC environment. Test processes and synthetic data are
+removed on exit; operator removes only the downloaded temporary runtime folder
+after checking its resolved path. See the [dated evidence](evidence/2026-10-04-static.md)
+for actual results and limits.
 
-Static checks contact no cluster and will be added with the package, run
-through its own test entry point and CI. Required content:
+## Installation, upgrade and live checks
 
-- rendered manifests parse and pass schema validation for the target
-  Kubernetes version;
-- every image and chart reference is pinned and no remote resource is
-  fetched at render time;
-- resource requests and limits, restricted Pod Security settings, storage
-  class, retention values and access-control settings are present;
-- the package refers to nothing outside its own directory;
-- negative fixtures prove that an unpinned image, missing retention, or an
-  unauthenticated endpoint configuration is rejected.
+See [the operational runbook](RUNBOOK.md) for the concrete review, install,
+restart/rollback/removal sequence and persistence handling. There is no
+automatic apply/delete in this CLI. Render/preflight are available before a
+separate environment/revision installation approval:
 
-Until the package exists these checks are NOT IMPLEMENTED.
+```powershell
+python observability.py render --site site.json --backend backend-capability.json --fragments backend-fragments.json
+python observability.py preflight --site site.json --backend backend-capability.json --fragments backend-fragments.json
+```
 
-## 7. Live smoke and acceptance tests
+Live uses `PCLOUD_OBSERVE_INGEST`, `PCLOUD_OBSERVE_QUERY`,
+`PCLOUD_OBSERVE_ADMIN` environment variables, each `username:password`, and the
+trusted CA from site input. It reads Kubernetes resources and endpoint health,
+compares rendered configuration/specs and checks query access denials. It never
+writes telemetry. Raw API/command errors and credentials are suppressed;
+redirects and ambient proxies are disabled. Reports must be new JSON files
+outside both product repositories. The read-only check remains **INCOMPLETE**
+until independent acceptance evidence is provided.
 
-These run against an installed stack (installed profiles) or against
-supplied endpoints (external profile), are separate from static CI, and
-must not use IOT-EE application code. Each check reports PASS, FAIL, SKIP
-or NOT IMPLEMENTED; a required check that cannot run, including one that
-lacks the authorization below, makes the run incomplete. Once implemented,
-the read-only checks belong to `l3-live-observability` and the Smoke
-operations to `l3-smoke-observability` in the dispatcher.
+Smoke requires an already authorized, separately installed conformance stack,
+explicit write consent, current revision and exact artifact digest in an
+ignored `review.json` with exactly `revision`, `artifact_sha256`, `namespace`,
+`purpose` (`conformance`). It rejects the platform namespace before any access.
+The test writes bounded synthetic signals, denies missing/query/admin ingest
+credentials, queries correlated logs/traces/metrics, checks bounded metric
+labels, paired-span service graph and firing platform alert. No resource is
+created/deleted or shared retention changed. Test data expires under its
+isolated retention. Failure leaves diagnostic data in that isolated stack.
 
-### Classification and authorization
+```powershell
+python observability.py smoke --site site.json --backend backend-capability.json --fragments backend-fragments.json --review review.json --allow-cluster-changes --output /absolute/outside/repositories/report.json
+```
 
-| Class | Operations | Authorization needed |
-| --- | --- | --- |
-| **Live (read-only)** | Query health and status endpoints; read the effective configuration (retention, limits, authentication); read platform dashboards and alert state; queries with missing or wrong credentials that must be rejected; TLS certificate verification; the read-only health checks of Layers 1 and 2 | Permission to reach the environment and read-only credentials. Writes no telemetry and changes nothing |
-| **Smoke (changes state)** | Synthetic writes, including ingest requests that must be rejected (if the control were broken they would write); temporary workloads such as the emitter; retention changes; component restart; backup and restore; removal and rollback; triggering a synthetic alert | The applicable owner or environment authorization for that operation, naming the cluster and the reviewed revision (`docs/CONTRACT.md` section F). The dispatcher's `-AllowClusterChanges` consent is required and does not replace that authorization |
-
-Without the authorization a Smoke check ends SKIP with the reason.
-
-**Isolation rules for every Smoke operation:**
-- synthetic writes go only to a designated test scope (a dedicated
-  namespace, tenant or instance), never to a scope that carries real data;
-- retention tests use a disposable instance or namespace created for the
-  test. They never alter retention on a shared or production instance; if
-  no disposable instance can be provided the test is SKIP, not run on a
-  shared one;
-- restart, restore, removal and rollback act only on the resources the test
-  created, or on an installation the authorization names. A restore goes
-  to a disposable instance;
-- cleanup deletes only resources the run created and labelled, records what
-  it removed, and never deletes unrelated data;
-- for the external profile, only the read-only Live checks and writes to
-  the designated test scope apply. Restarting, removing or rolling back
-  the supplied stack belongs to its operator and is not part of that
-  profile's conformance set.
-
-### Checks
-
-**Ingest and query.**
-- *Smoke (synthetic write, then read-only queries).* A temporary emitter
-  sends one trace, one log record and one metric sample to the test scope.
-  The log record carries the trace ID and span ID of the trace and a run
-  identifier as a log field. The log is found by the run identifier and the
-  trace by its trace ID, and the log's trace ID is shown to match the
-  stored trace. Each query completes within a stated time limit.
-- The metric is checked without correlating it by a per-run label: it uses
-  a fixed test metric name and a small fixed set of label values, and is
-  found by that name and the expected value within the test's time window.
-  A unique run, trace or user identifier is never a metric label.
-- *Cardinality.* The test asserts that it created no more than a stated
-  small number of series, and that no identifier of unbounded value appears
-  as a metric label. Sensitive identifiers are not metric labels either.
-- *Service graph.* Paired synthetic client and server spans produce a
-  service-to-service edge in Grafana. A missing or expired edge is visible
-  as a diagnostic condition.
-
-**Access controls.**
-- *Live (read-only):* a query with no credentials or invalid credentials is
-  rejected; an ingest-only credential cannot read data; the transport is
-  encrypted with a certificate the consumer can verify; the effective
-  authentication settings match the contract; no credential or token
-  appears in component logs or in the test output.
-- *Smoke (attempted writes that must be rejected, in the test scope):*
-  ingest without valid credentials is rejected; a read-only role cannot
-  write or change configuration; a query credential cannot ingest.
-- If the profile uses tenancy or scoping, data written to one test scope
-  cannot be read from another (*Smoke*, because it writes first). Whether
-  the stack is multi-tenant is an open choice (section 9).
-
-**Retention.** Each signal's retention is declared.
-- *Live (read-only):* read the effective retention from the running
-  component and compare it with the declared value. This is weaker evidence
-  and is recorded as such.
-- *Smoke (isolated resources only):* in a disposable instance or namespace
-  configured with a deliberately short retention, synthetic data disappears
-  after the stated interval. This never changes a shared or production
-  instance's retention. The lab's retention values are not production
-  values.
-
-**Recovery (all Smoke, subject to the isolation rules).**
-- each component of the test installation is restarted in turn; ingestion
-  resumes, previously ingested synthetic data is still queryable, and the
-  backlog or drop behaviour matches the declared, bounded policy;
-- while a component is down, the read-only health checks of Layers 1 and 2
-  still pass, showing failure isolation;
-- if the profile declares backups, a backup is taken and restored into a
-  disposable instance, which returns the synthetic data; if it declares
-  none, the data-loss effect is stated;
-- removal and rollback return the test installation to its earlier state,
-  with the handling of persistent data stated explicitly (kept or
-  deleted), and touch nothing outside it.
-
-**Platform alerting (Smoke).** A synthetic failure condition in the test
-scope triggers a platform alert that reaches a designated test receiver.
-
-## 8. Rollback and recovery
-
-Not written. The future package must document, per profile:
-
-- rollback of an installation or upgrade to the previous version set, and
-  what happens to persistent data in each case;
-- restore from backup, or a clear statement that data is not recoverable;
-- removal of the whole layer without affecting Layers 0-2 or any workload;
-- the effect of an observability outage on consumers: telemetry export
-  must fail bounded (explicit buffer and drop policy) and must not stop an
-  application from doing its work.
-
-Rollback is tested in an isolated lab installation, with the authorization
-and isolation rules of section 7, before any claim is made.
-
-## 9. Evidence requirements and known limitations
-
-**Evidence.** Dated records go in `deploy/03-observability/evidence/` once
-the package exists, in the style of
-[the Layer 2 record](../02-cluster-addons/evidence/2026-09-28-hyperv-lab.md).
-A record states the cluster, the revision, the version set, the checks run
-with their actual output, what was not tested, and what is not established.
-Test-run output from the dispatcher is current execution output, not
-evidence, and is never written into the repository. Approvals, logs,
-checksums and results are never invented; an unavailable verification is
-recorded as blocked, not passed. Historical evidence is not edited.
-
-**Lab acceptance is not production readiness.**
-
-| Claim | Requires | Status |
-| --- | --- | --- |
-| Lab function | Sections 6 and 7 pass on the lab cluster, plus an owner-approved soak interval with recorded resource use, backlog and drop behaviour, and rollback evidence | Not started |
-| Production HA | Replicas across failure domains, durable storage that survives node loss, upgrade without data loss, tested failover | Not designed |
-| Disaster recovery | Owner-set recovery point and time targets, backups stored outside the failure domain, a timed restore | Not designed |
-| Production capacity | Ingest and query volume measured or modelled, storage growth and retention sized, limits set from measurement | Not designed |
-| 24x7 operation | Named on-call, alert routing to real receivers, runbooks, upgrade and incident procedures | Not designed |
-
-The current lab is one physical Hyper-V host behind Windows NAT with one
-control plane. A lab pass says nothing about HA, DR, capacity or 24x7
-operation, and a short smoke test does not show continuous-service
-stability.
-
-**Open choices (not decided here).**
-- component versions and the licence position for AGPLv3 components;
-- the installation tool (for example Helm-rendered or Kustomize
-  manifests) and the deployment mode of each component;
-- the durable storage backend and whether one is required in the lab;
-- the Collector topology (per-node agent, gateway, or both) and its
-  buffering and drop policy;
-- the Grafana identity source and role model;
-- whether the stack is multi-tenant, and how tenants map to IOT-EE tenants;
-- alert receiver, and how IOT-EE dashboards and alert rules are delivered
-  to Grafana without either product reading the other's files;
-- the capability contract's format, versioning and publication;
-- retention values, resource sizing and the soak interval (owner input);
-- whether the cluster's network layer adds a separate flow view.
-
-**Known limitations.** No pCloud Layer 3 installation has been verified.
-No storage class, object storage or secret-management backend is confirmed
-in the lab, so an installed profile cannot start there today. There is no
-package and no Layer 3 test; the external profile's conformance checks are
-unwritten as well.
+Successful automated API checks remain **INCOMPLETE** pending actual receiver
+receipt, retention expiry, restart/recovery, layer failure isolation, rollback
+and owner-approved soak. The [acceptance checklist](ACCEPTANCE.md) defines those
+required records; no absent check silently becomes PASS.
