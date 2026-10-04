@@ -120,6 +120,36 @@ class LayoutRejectionTests(unittest.TestCase):
     def test_valid_fixture_passes(self) -> None:
         self.assert_passes()
 
+    def test_registered_external_worktree_passes(self) -> None:
+        checkout=self.tmp / "linked"
+        git(self.repo, "worktree", "add", "--detach", str(checkout))
+        result=self.run_verifier(checkout)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_rejects_unregistered_worktree(self) -> None:
+        checkout=self.tmp / "linked"
+        git(self.repo, "worktree", "add", "--detach", str(checkout))
+        registration=next((self.repo / ".git" / "worktrees").iterdir())
+        (registration / "gitdir").write_text(str(self.tmp / "wrong" / ".git"))
+        self.assert_rejects("root .git pointer must identify a registered linked worktree",checkout)
+
+    def test_rejects_separate_git_directory(self) -> None:
+        metadata=self.tmp / "external-metadata"
+        # Git provides a valid top-level checkout, but this is not a linked
+        # worktree with reciprocal registration in the product repository.
+        git(self.repo,"init","--separate-git-dir",str(metadata))
+        self.assert_rejects("root .git pointer must identify a registered linked worktree")
+
+    def test_rejects_tracked_site_input(self) -> None:
+        self.write("deploy/00-infra/demo/site.json","{}\n")
+        self.commit()
+        self.assert_rejects("tracked local state/configuration: deploy/00-infra/demo/site.json")
+
+    def test_rejects_tracked_review_input(self) -> None:
+        self.write("deploy/00-infra/demo/review.json","{}\n")
+        self.commit()
+        self.assert_rejects("tracked local state/configuration: deploy/00-infra/demo/review.json")
+
     def test_ignored_local_state_is_allowed(self) -> None:
         self.write(".gitignore", "*.tfstate\nterraform.tfvars\nhosts.ini\n")
         self.commit()

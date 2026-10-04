@@ -4,7 +4,7 @@ Reusable private-cloud deployment packages in one Git repository. Each layer con
 
 ```
 pCloud/
-  .git/                         one repository, created locally
+  .git/                         repository metadata (registered worktrees use a pointer)
   .github/workflows/infra.yml    static package checks (Layers 0-2)
   .github/workflows/layout.yml   layout/governance check on every change
   deploy/
@@ -34,3 +34,7 @@ Each package can also be copied to another project and tested alone with the com
 For deployment prerequisites and the installation sequence, see [deploy/README.md](deploy/README.md) and each package README. Local state, credentials and real inventory must remain ignored. This reorganization does not apply any infrastructure changes.
 
 Only Layers 0-2 currently have implementation packages. Observability, storage, secrets, Kafka and APISIX remain planned; see the source evidence and limitations before making readiness claims.
+
+## Lab implementation progress
+
+Registered linked worktrees and tracked local configuration guards are validated. Pinned render-tool installation and safe native-process dispatch are available.
