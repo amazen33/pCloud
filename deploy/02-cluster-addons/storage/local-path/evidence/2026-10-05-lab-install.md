@@ -3,6 +3,11 @@
 Date: 2026-10-05 (Africa/Cairo).
 Status: installed; read-only Live checks passed; isolated acceptance pending.
 
+This is the Stage 1 record. The owner subsequently approved the isolated
+smoke; its [separate dated evidence](2026-10-05-lab-smoke.md) records the final
+persistence/recovery/helper/affinity/rebind and cleanup pass. Worker reboot
+persistence remains untested.
+
 ## Authorization and revision
 
 The owner explicitly approved "Stage 1 storage deployment" after reviewing

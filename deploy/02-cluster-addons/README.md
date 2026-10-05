@@ -74,7 +74,10 @@ LoadBalancer smoke test shows that this lab package works; it does not show
 production high availability or disaster recovery. Storage and secrets are separate
 Layer 2 packages. The [storage package](storage/local-path/README.md) implements
 the [accepted lab profile](../../docs/adr/0001-lab-persistent-storage.md), with
-static checks and gated live acceptance; it has no live acceptance evidence.
+static checks and gated live acceptance. Its
+[2026-10-05 isolated smoke](storage/local-path/evidence/2026-10-05-lab-smoke.md)
+passed persistence/recovery/helper/affinity/rebind and cleanup; worker reboot
+persistence remains untested.
 The [secrets package](secrets/openbao/README.md) implements the OpenBao lab
 profile and supplied API conformance boundary, with static validation and
 pending deployment/acceptance. Storage and secrets each have their own
