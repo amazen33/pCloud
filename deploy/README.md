@@ -11,7 +11,7 @@ working directory or Terraform state.
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
 | Storage | `02-storage/local-pv/` | Static local PersistentVolumes on a dedicated guest disk per node: read-only disk inspection, blank-disk preparation and package-disk adoption (typed authorization), verification, PV rendering; the `pcloud-local` StorageClass | `bash 02-storage/local-pv/tests/verify-local-pv.sh` (`--render` adds `kubectl kustomize` and kubeconform; run in CI) | Both lab workers' data disks prepared, verified and reboot-tested on 2026-09-30; worker-01 manual Kubernetes smoke passed. Test cluster objects removed; StorageClass/PVs removed after the dated test; current live state not rechecked. Examples remain synthetic. No replication, backup, snapshot or quota |
 | Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Its root render does not install storage |
-| Layer 2 storage | `02-cluster-addons/storage/local-path/` | Dedicated worker filesystem volumes | `python 02-cluster-addons/storage/local-path/tests/verify-storage.py`; optional `--render` | Installed on 2026-10-05; Live, isolated persistence/recovery/helper/affinity/rebind smoke and cleanup passed; worker reboot persistence untested |
+| Layer 2 storage | `02-cluster-addons/storage/local-path/` | Dedicated worker filesystem volumes | `python 02-cluster-addons/storage/local-path/tests/verify-storage.py`; optional `--render` | Required node-local lab gates passed on 2026-10-05: installation, strict Live, isolated smoke, both worker reboot/mount/data checks, actual helpers and synthetic cleanup |
 | Layer 2 secrets | `02-cluster-addons/secrets/openbao/` | TLS/Raft lab secrets and supplied API conformance | `python 02-cluster-addons/secrets/openbao/tests/verify-secrets.py`; optional `--render` | Implemented and locally validated; no deployment, restart or restore acceptance |
 | Layer 2 observability backend | `02-cluster-addons/storage/observability-filesystem/` | Monolithic filesystem claims, storage fragments/handover and POSIX conformance | `python 02-cluster-addons/storage/observability-filesystem/tests/verify-backend.py`; optional `--render` | Implemented; Linux offline and render validated; no mounted lab or LGTM API acceptance |
 | Layer 3 | `03-observability/` ([README](03-observability/README.md)) | Monolithic LGTM/Collector, TLS role gateway, platform view/alerts and capability | `python 03-observability/tests/verify-observability.py`; optional `--render` | Lab implementation available; no cluster deployment or live acceptance |
@@ -29,7 +29,9 @@ define the node-local lab profile accepted by the owner on 2026-10-04.
 M3a local-path Stage 1 installation and read-only Live checks passed on 2026-10-05;
 see [dated installation evidence](02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
 Its [isolated persistence/recovery smoke](02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-smoke.md)
-and cleanup passed; worker reboot persistence remains untested. The historical
+and cleanup passed. Both workers then passed
+[serial reboot/remount/data persistence and cleanup](02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-reboot.md),
+completing the required M3a node-local lab gates. The historical
 static local-PV disk preparation and temporary smoke evidence belong to the
 separate profile above; current mounts/capacity and profile-specific acceptance
 need profile-specific acceptance before consuming a storage handover. M3c selects a
@@ -56,7 +58,9 @@ and RKE2's bundled ingress-nginx. On 2026-09-30, the static local-PV package rec
 On 2026-10-05, both worker data mounts/UUIDs were refreshed and separate dynamic
 application-storage subtrees were bind-mounted for M3a. Its nine-object package
 was installed; provisioner/read-only Live and isolated smoke/cleanup passed.
-The new bind mounts have not been reboot-tested. The original static-PV acceptance has
+Both new bind mounts then recovered automatically during separately authorized
+serial worker reboots; original synthetic data checksums and cleanup passed.
+The original static-PV acceptance has
 not been repeated for this revision.
 RKE2 data is on each OS disk. The new Layer 1 storage policy requires an
 explicit disk of at least 40 GiB and has not been run on these nodes.
@@ -141,9 +145,9 @@ establish implementation or live acceptance.
 | --- | --- | --- | --- |
 | Layer 0 | A Windows Hyper-V host | VMs, network, inventory handover | Package merged |
 | Layer 1 | Ubuntu VMs and an inventory, from Layer 0 or any compatible provider | Kubernetes API and kubeconfig | Package merged |
-| Layer 2 | A working Kubernetes API; storage additionally needs separately prepared application mounts and capacity; secrets needs accepted storage, TLS and key custody | LoadBalancer addresses (kube-vip); implemented filesystem-storage and secrets capability boundaries | kube-vip historical install; local-path installed with isolated smoke/cleanup passed, reboot untested; secrets undeployed |
+| Layer 2 | A working Kubernetes API; storage additionally needs separately prepared application mounts and capacity; secrets needs accepted storage, TLS and key custody | LoadBalancer addresses (kube-vip); implemented filesystem-storage and secrets capability boundaries | kube-vip historical install; local-path required node-local lab gates passed, including both worker reboots and cleanup; secrets undeployed |
 | Storage | A working Kubernetes API, nodes with a verified, blank, dedicated disk, and verified SSH host keys | Node-pinned local volumes (`pcloud-local`); no replication, backup or quota | Both worker disks prepared and verified in the lab; worker-01 binding and missing-mount smoke passed. Test StorageClass/PVs removed; current live state not rechecked |
-| Layer 3 | Accepted cluster, M3a/M3b/M3c or equivalent handovers, capacity, custody, TLS/routing and enforced policies | Versioned lab ingest/query/admin endpoints, platform view and alerts | Lab implementation available; actual prerequisite readiness and all lab acceptance gates pending |
+| Layer 3 | Accepted cluster, M3a/M3b/M3c or equivalent handovers, capacity, custody, TLS/routing and enforced policies | Versioned lab ingest/query/admin endpoints, platform view and alerts | Lab implementation available; remaining prerequisite readiness and Layer 3 live acceptance gates pending |
 | Platform services | Layers 0-3 or their equivalents | Kafka and APISIX packages | Planned |
 | Applications (IOT-EE) | The platform capabilities they consume, through versioned endpoints and configuration | IoT services with their own instrumentation and dashboards | Owned and released by IOT-EE |
 

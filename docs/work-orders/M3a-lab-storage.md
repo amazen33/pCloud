@@ -3,9 +3,11 @@
 **Status:** Implemented locally under the owner's instruction for Codex to
 take the Claude engineering role and complete the lab profile first. The owner accepted the
 M3a lab profile and namespace security exception on 2026-10-04 in this
-conversation; see ADR-0001. Code and static validation are available; installation
-and live acceptance are pending. Design acceptance
-does not authorize host/cluster changes.
+conversation; see ADR-0001. Installation, isolated smoke and separately
+authorized serial worker reboot/cleanup passed on 2026-10-05; see
+[the dated lab acceptance](../../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-reboot.md).
+M3a's required node-local lab gates are complete. This implementation work
+order and design acceptance do not themselves authorize host/cluster changes.
 
 ## Outcome and scope
 
@@ -202,3 +204,14 @@ read-only and consent-gated operations are now implemented; see
 The [installation proposal](M3a-lab-install.md) identifies missing target,
 mount/capacity and revision inputs. Installation and lab acceptance remain
 unperformed. No production profile or Crossplane dependency was added.
+
+## Subsequent lab acceptance -- 2026-10-05
+
+The owner separately authorized Stage 1 installation, isolated storage smoke
+and the serial worker reboot plan. Their dated records now establish
+installation/strict Live, all required isolated smoke checks, automatic
+mount and checksum persistence on both workers, actual helper capture and
+complete scoped synthetic cleanup; see [lab reboot acceptance](../../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-reboot.md).
+The earlier architecture/static sections retain their historical limits.
+This accepts only the required node-local lab storage gates; other platform
+milestones, production HA/DR and backup/restore remain incomplete.

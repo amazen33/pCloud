@@ -4,7 +4,9 @@ Standalone Layer 2 package for Local Path Provisioner **v0.0.37** on Linux
 Kubernetes **1.35.x**. The owner accepted this lab profile and its namespace
 exception on 2026-10-04. Stage 1 installation and strict Live checks passed
 on 2026-10-05; isolated smoke and cleanup passed, recorded separately in
-[the dated smoke evidence](evidence/2026-10-05-lab-smoke.md).
+[the dated smoke evidence](evidence/2026-10-05-lab-smoke.md). Both workers then
+passed [serial reboot/remount/data persistence and cleanup](evidence/2026-10-05-lab-reboot.md),
+completing the required M3a `node-local-lab` gates for this lab.
 
 ## Profiles and capability
 
@@ -255,5 +257,8 @@ and a regression test; strict drift guards remain enabled.
 The [dated isolated smoke](evidence/2026-10-05-lab-smoke.md) records passed
 PVC/Pod persistence, actual generated helpers, controller recovery, affinity
 rejection, retained-volume rebind and complete synthetic-data cleanup.
-Worker reboot/remount persistence remains untested; full lab completion,
-backup/restore and production controls are incomplete.
+The [dated serial worker reboot](evidence/2026-10-05-lab-reboot.md) records
+automatic mount recovery, identical data checksums, positive provisioning
+on both workers and complete synthetic cleanup. M3a's required lab storage
+gates passed; other platform milestones, backup/restore and production
+controls remain incomplete.
