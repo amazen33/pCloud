@@ -1,9 +1,9 @@
 # pCloud milestones
 
-Status recorded on 2026-10-04 against source baseline
-`9805d6f3cdb355ae33d6d35b283cec447c9ed9b9`. Live infrastructure has not
-been rechecked for this document. The September lab records describe the
-earlier installation; see [deployment evidence and limits](../deploy/README.md).
+Status updated on 2026-10-05. M3a Stage 1 was deployed from
+`3a7eee6c673821a56331a7b324ef65f827db3e7d`; this change corrects its Live
+checker/render defaults and records the actual installation. Other deployment
+claims retain their dated limits; see [deployment evidence and limits](../deploy/README.md).
 
 These identifiers formalize the layer-based plan. A design, implementation,
 static pass and lab acceptance are separate states. A milestone requiring
@@ -14,7 +14,7 @@ lab acceptance stays incomplete until the dated evidence exists.
 | M0 | Repository split, governance, product boundaries and test dispatch | Implemented in the repository; the explanatory ownership ADR is still proposed | Preserve the contract, layout guard, CI invocation and package independence |
 | M1 | Layer 0 Hyper-V provisioning | Package merged; this revision not applied to the lab | Reviewed plan, host-capacity check, authorized apply and recorded inventory handover |
 | M2 | Layer 1 OS/RKE2 engine | Package merged; dedicated data-mount policy not applied to the lab | Authorized fresh install or separate migration, health/security checks and revision-specific evidence |
-| M3a | Layer 2 persistent filesystem storage | Accepted design implemented: standalone package, static/render checks, read-only preflight, guarded live acceptance and CI/dispatcher integration; no installed/live acceptance | Authorized dedicated application mounts, measured capacity and isolated lab acceptance; dated revision-specific evidence |
+| M3a | Layer 2 persistent filesystem storage | Stage 1 installed on 2026-10-05: worker mounts/capacity, nine-object apply, provisioner available and read-only Live pass; isolated acceptance incomplete | Authorized persistence/helper/affinity/rebind/controller-recovery tests, retained-data disposition and dated evidence |
 | M3b | Layer 2 secret management | OpenBao lab / supplied API profiles implemented with TLS/Raft, guarded lifecycle, local TLS/static/render tests and CI/dispatcher integration; no deployment/live acceptance | Measured capacity, trusted TLS and key custody; live authorization/rotation/audit, restart/reunseal and isolated snapshot restore evidence |
 | M3c | Observability data backend / object-storage capability | Native monolithic filesystem profile implemented: distinct claims, pinned storage fragments/capability, guarded probes and local Linux POSIX/static/render validation; no deployment | Accepted mounted filesystem/remount/UID checks, retained test-PV disposition; signal-specific ingest/query/recovery evidence with M4 |
 | M4 | Layer 3 OpenTelemetry and LGTM | Standalone lab runtime, explicit M3c inputs, TLS role gateway, capability, guarded API conformance and offline/render checks implemented; isolated Linux signal/TLS/dashboard/alert/restart exercise passed; no cluster deployment | Required M3 capabilities or supplied equivalents; independent ingest/query, access, retention, recovery and soak evidence |
@@ -43,8 +43,10 @@ and the [Claude implementation work order](work-orders/M3a-lab-storage.md).
 The owner authorized Codex to implement the work in the Claude engineering
 role and selected lab completion before production. The work order covers
 code and static checks; see the [package](../deploy/02-cluster-addons/storage/local-path/README.md).
-Current mount and capacity evidence for the M3a local-path profile has not
-been confirmed; its installation remains a later gate.
+The owner authorized Stage 1 installation on 2026-10-05; current mounts,
+capacity, provisioner rollout and read-only Live pass are recorded in
+[the dated installation evidence](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
+Isolated storage acceptance remains a later gate.
 No infrastructure modification is authorized by this milestone tracker.
 The [installation proposal](work-orders/M3a-lab-install.md) lists the actual
 remaining inputs and deployment/acceptance gate; local static results are

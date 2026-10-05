@@ -1,5 +1,9 @@
 # M3a: lab installation and acceptance gate
 
+Historical proposal from 2026-10-04. The owner subsequently authorized Stage 1;
+see [2026-10-05 installation and remaining acceptance gates](../../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
+The inputs/status below describe the original proposal, not the current installation.
+
 **Status:** Package implemented and statically validated; target inputs
 missing. This is an installation proposal, not an approval or execution
 record. Follow `docs/CONTRACT.md` sections D-F. No VM, disk or cluster

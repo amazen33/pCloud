@@ -11,7 +11,7 @@ working directory or Terraform state.
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
 | Storage | `02-storage/local-pv/` | Static local PersistentVolumes on a dedicated guest disk per node: read-only disk inspection, blank-disk preparation and package-disk adoption (typed authorization), verification, PV rendering; the `pcloud-local` StorageClass | `bash 02-storage/local-pv/tests/verify-local-pv.sh` (`--render` adds `kubectl kustomize` and kubeconform; run in CI) | Both lab workers' data disks prepared, verified and reboot-tested on 2026-09-30; worker-01 manual Kubernetes smoke passed. Test cluster objects removed; StorageClass/PVs removed after the dated test; current live state not rechecked. Examples remain synthetic. No replication, backup, snapshot or quota |
 | Layer 2 | `02-cluster-addons/` | kube-vip LoadBalancer add-on | `python 02-cluster-addons/tests/verify-layer2.py`; `--render` adds `kubectl kustomize` and kubeconform (run in CI) | kube-vip package installed in the lab; `10.20.0.40` smoke test passed on 2026-09-28. Its root render does not install storage |
-| Layer 2 storage | `02-cluster-addons/storage/local-path/` | Dedicated worker filesystem volumes | `python 02-cluster-addons/storage/local-path/tests/verify-storage.py`; optional `--render` | Implemented and locally validated; no installation or live acceptance |
+| Layer 2 storage | `02-cluster-addons/storage/local-path/` | Dedicated worker filesystem volumes | `python 02-cluster-addons/storage/local-path/tests/verify-storage.py`; optional `--render` | Stage 1 installed on 2026-10-05; worker mounts, provisioner rollout and read-only Live passed; isolated acceptance pending |
 | Layer 2 secrets | `02-cluster-addons/secrets/openbao/` | TLS/Raft lab secrets and supplied API conformance | `python 02-cluster-addons/secrets/openbao/tests/verify-secrets.py`; optional `--render` | Implemented and locally validated; no deployment, restart or restore acceptance |
 | Layer 2 observability backend | `02-cluster-addons/storage/observability-filesystem/` | Monolithic filesystem claims, storage fragments/handover and POSIX conformance | `python 02-cluster-addons/storage/observability-filesystem/tests/verify-backend.py`; optional `--render` | Implemented; Linux offline and render validated; no mounted lab or LGTM API acceptance |
 | Layer 3 | `03-observability/` ([README](03-observability/README.md)) | Monolithic LGTM/Collector, TLS role gateway, platform view/alerts and capability | `python 03-observability/tests/verify-observability.py`; optional `--render` | Lab implementation available; no cluster deployment or live acceptance |
@@ -26,10 +26,12 @@ Track design, implementation and acceptance separately in
 [accepted storage ADR](../docs/adr/0001-lab-persistent-storage.md)
 and [implementation work order](../docs/work-orders/M3a-lab-storage.md)
 define the node-local lab profile accepted by the owner on 2026-10-04.
-M3a local-path installation and live conformance remain pending. The historical
+M3a local-path Stage 1 installation and read-only Live checks passed on 2026-10-05;
+see [dated installation evidence](02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
+Isolated persistence/recovery acceptance remains pending. The historical
 static local-PV disk preparation and temporary smoke evidence belong to the
 separate profile above; current mounts/capacity and profile-specific acceptance
-need fresh verification before consuming either storage handover. M3c selects a
+need profile-specific acceptance before consuming either storage handover. M3c selects a
 [monolithic native filesystem backend](02-cluster-addons/storage/observability-filesystem/README.md)
 with explicit claims and fragments; it provides no S3 API and has no live
 acceptance. M4 owns complete runtime, access, retention and API/recovery proof.
@@ -49,13 +51,19 @@ Hyper-V VMs and RKE2 `v1.35.7+rke2r1`: one control-plane node and two
 workers were Ready, API `/readyz` was healthy, and secrets encryption was
 enabled. This is evidence of the **earlier lab installation**, not a live
 test of the newly merged standalone packages. The running cluster uses Canal
-and RKE2's bundled ingress-nginx. On 2026-09-30, the static local-PV package recorded preparation and reboot verification of both workers' 20 GiB secondary disks, with worker-01 temporary PVC/pod smoke evidence. The test StorageClass/PVs were removed. This historical record has not been refreshed for the current revision. Its 20 GiB secondary disks are unmounted;
+and RKE2's bundled ingress-nginx. On 2026-09-30, the static local-PV package recorded preparation and reboot verification of both workers' 20 GiB secondary disks, with worker-01 temporary PVC/pod smoke evidence. The test StorageClass/PVs were removed.
+On 2026-10-05, both worker data mounts/UUIDs were refreshed and separate dynamic
+application-storage subtrees were bind-mounted for M3a. Its nine-object package
+was installed and the provisioner/read-only Live checks passed; isolated smoke
+and reboot acceptance remain pending. The original static-PV acceptance has
+not been repeated for this revision.
 RKE2 data is on each OS disk. The new Layer 1 storage policy requires an
 explicit disk of at least 40 GiB and has not been run on these nodes.
 
 The lab is one physical Hyper-V host behind Windows NAT with one control
 plane. It has neither host nor control-plane high availability. Layer 2
-kube-vip is installed and smoke-tested. Storage classes, a secrets backend,
+kube-vip is installed and smoke-tested. The non-default `pcloud-local-retain`
+class/provisioner is installed; its isolated storage acceptance is pending. A secrets backend,
 Kafka, APISIX, and the observability stack have no confirmed lab installation.
 None of the current
 checks establishes production capacity, HA, disaster recovery or 24/7
