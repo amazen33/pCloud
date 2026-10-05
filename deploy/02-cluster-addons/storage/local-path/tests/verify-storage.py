@@ -245,18 +245,43 @@ class StorageChecks(unittest.TestCase):
 
     def test_helper_watch_pins_api_and_client_timeouts(self):
         c=fixture();watch=storage.HelperWatch(c)
-        with mock.patch.object(storage,'get',return_value={'metadata':{'resourceVersion':'12345'}}),\
+        with mock.patch.object(storage,'kube',return_value=json.dumps({'metadata':{'resourceVersion':'12345'}})) as api,\
              mock.patch.object(storage.subprocess,'Popen') as process:
             watch.start()
+        api.assert_called_once_with(c,'get','--raw=/api/v1/namespaces/'+storage.NAMESPACE+'/pods')
         argv=process.call_args.args[0]
         self.assertIn('--raw=/api/v1/namespaces/'+storage.NAMESPACE+'/pods?watch=true&resourceVersion=12345&timeoutSeconds=900',argv)
         self.assertIn('--request-timeout=910s',argv)
         self.assertNotIn('--watch-only',argv)
         watch.file.close()
-        with mock.patch.object(storage,'get',return_value={'metadata':{'resourceVersion':'1&namespace=foreign'}}),\
+        opaque=storage.HelperWatch(c)
+        with mock.patch.object(storage,'kube',return_value=json.dumps({'metadata':{'resourceVersion':'opaque&namespace=foreign'}})),\
              mock.patch.object(storage.subprocess,'Popen') as process:
-            with self.assertRaises(ValueError):storage.HelperWatch(c).start()
-            process.assert_not_called()
+            opaque.start()
+        self.assertIn('resourceVersion=opaque%26namespace%3Dforeign',process.call_args.args[0][4])
+        opaque.file.close()
+        for rv in ('',None,123,'a'*513):
+            with mock.patch.object(storage,'kube',return_value=json.dumps({'metadata':{'resourceVersion':rv}})),\
+                 mock.patch.object(storage.subprocess,'Popen') as process:
+                with self.assertRaises(ValueError):storage.HelperWatch(c).start()
+                process.assert_not_called()
+
+    def test_report_preserves_primary_failure_when_helper_cleanup_also_fails(self):
+        c=fixture();cluster=Cluster(storage,c);normal=cluster.kube
+        args=argparse.Namespace(allow_cluster_changes=True,approved_digest=storage.digest(c),revision='a'*40,
+            allow_controller_restart=True,allow_volume_admin=False,output=None)
+        def failed(config,*argv,data=None):
+            if argv[0]=='create':raise storage.CheckRejected('Namespace creation failed')
+            return normal(config,*argv,data=data)
+        with mock.patch.object(storage,'preflight'),mock.patch.object(storage,'kube',side_effect=failed),\
+             mock.patch.object(storage,'get',side_effect=cluster.get),mock.patch.object(storage,'HelperWatch',cluster.watcher()),\
+             mock.patch('builtins.print') as output:
+            with self.assertRaises(ValueError):storage.smoke(c,args)
+        report=json.loads(output.call_args.args[0])
+        self.assertEqual(report['failure']['message'],'Namespace creation failed')
+        self.assertEqual(report['cleanup_failure']['message'],'No actual generated helper captured; admission evidence is incomplete')
+        self.assertEqual(report['created_objects'],[])
+        self.assertEqual(report['status'],'FAIL');self.assertEqual(report['cleanup'],'FAIL')
 
     def test_uninstall_refuses_pending_claims_and_retained_pvs(self):
         c=fixture()
