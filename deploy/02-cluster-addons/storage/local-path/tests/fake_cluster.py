@@ -58,7 +58,10 @@ class Cluster:
             if obj['kind']=='Pod':self.bind(obj)
         elif args[0]=='get':
             if any(a.startswith('-o=jsonpath=') for a in args):return ''
-            if args[1]=='events':return json.dumps({'items':[{'reason':'FailedScheduling','message':'volume node affinity conflict'}]})
+            if args[1]=='events':
+                pod=next(v for (kind,_,name),v in self.objects.items() if kind=='Pod' and name=='wrong-node')
+                return json.dumps({'items':[{'reason':'FailedScheduling','message':'volume node affinity conflict',
+                    'involvedObject':{'uid':pod['metadata']['uid']}}]})
             if args[1]=='pvc':return json.dumps(self.get(config,'PersistentVolumeClaim'))
             raise AssertionError('Unexpected fixture GET')
         elif args[0]=='exec':

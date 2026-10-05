@@ -2,8 +2,9 @@
 
 Standalone Layer 2 package for Local Path Provisioner **v0.0.37** on Linux
 Kubernetes **1.35.x**. The owner accepted this lab profile and its namespace
-exception on 2026-10-04. Implementation and static validation are available;
-installation and live acceptance have not been performed.
+exception on 2026-10-04. Stage 1 installation and strict Live checks passed
+on 2026-10-05; isolated acceptance is being recorded separately in
+[the dated smoke evidence](evidence/2026-10-05-lab-smoke.md).
 
 ## Profiles and capability
 

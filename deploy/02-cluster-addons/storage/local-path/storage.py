@@ -363,9 +363,13 @@ class HelperWatch:
     def __init__(self,config):self.config=config;self.process=None;self.file=None
     def start(self):
         rv=get(self.config,'pods',namespace=NAMESPACE)['metadata']['resourceVersion']
+        # API watch timeoutSeconds is independent of the client's request timeout.
+        # Pin both so server-default watch expiry cannot truncate helper evidence.
+        require(re.fullmatch('[0-9]+',rv),'Invalid helper watch resource version')
+        endpoint='/api/v1/namespaces/'+NAMESPACE+'/pods?watch=true&resourceVersion='+rv+'&timeoutSeconds=900'
         self.file=tempfile.TemporaryFile()
-        self.process=subprocess.Popen(['kubectl','--context',self.config['context'],'get','pods','-n',NAMESPACE,
-            '--watch-only','--output-watch-events','--resource-version='+rv,'--request-timeout=900s','-o','json'],
+        self.process=subprocess.Popen(['kubectl','--context',self.config['context'],'get',
+            '--raw='+endpoint,'--request-timeout=910s'],
             stdout=self.file,stderr=subprocess.DEVNULL)
     def finish(self):
         if not self.process:return []
@@ -414,6 +418,14 @@ def namespace_empty(config,namespace):
         for identity in identities:
             require(identity in ('ServiceAccount|default','ConfigMap|kube-root-ca.crt') or
                 resource in ('events','events.events.k8s.io'), 'Unexpected object in test namespace; removal withheld')
+
+
+def volume_affinity_rejection(events,pod_uid):
+    """Require a PV-affinity scheduling failure for this exact synthetic Pod."""
+    messages=('volume node affinity conflict',"node(s) didn't match PersistentVolume's node affinity")
+    return next((e for e in events if e.get('reason')=='FailedScheduling'
+        and e.get('involvedObject',{}).get('uid')==pod_uid
+        and any(message in e.get('message','') for message in messages)),None)
 
 
 def smoke(config,args):
@@ -490,7 +502,11 @@ def smoke(config,args):
             while time.monotonic()<end:
                 require(not get(config,'pod','wrong-node',namespace)['status'].get('containerStatuses'),'Wrong-node consumer ran')
                 events=json.loads(kube(config,'get','events','-n',namespace,'--field-selector','involvedObject.uid='+actual['metadata']['uid'],'-o','json'))['items']
-                if any(e.get('reason')=='FailedScheduling' and 'volume node affinity conflict' in e.get('message','') for e in events):rejected=True;break
+                evidence=volume_affinity_rejection(events,actual['metadata']['uid'])
+                if evidence:
+                    report['affinity_rejection']={'pod_uid':actual['metadata']['uid'],'worker':others[0],
+                        'volume_worker':selected,'reason':evidence['reason'],'message':evidence['message']}
+                    rejected=True;break
                 time.sleep(1)
             require(rejected,'Scheduler did not prove volume node affinity rejection');remove('Pod','wrong-node')
             report['checks'].append('incompatible-worker-rejected')
