@@ -51,8 +51,9 @@ The [milestone tracker](docs/MILESTONES.md) separates design, implementation
 and lab acceptance. M3a has an [accepted lab storage design](docs/adr/0001-lab-persistent-storage.md)
 and an [implementation work order](docs/work-orders/M3a-lab-storage.md).
 The owner authorized Codex to implement that work in the Claude engineering
-role. M3a's code is available; its lab exit gate still needs a dedicated
-application-storage mount and authorized cluster acceptance. Crossplane is
+role. M3a's [Stage 1 lab installation](deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md)
+has verified application mounts, a running provisioner and read-only Live pass;
+isolated persistence/recovery acceptance remains pending. Crossplane is
 deferred; it is not a dependency of this lab.
 
 The [static local-PV package](deploy/02-storage/local-pv/README.md) is also

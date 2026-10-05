@@ -264,6 +264,45 @@ class StorageChecks(unittest.TestCase):
              mock.patch.object(storage,'get',return_value=sc),mock.patch.object(storage,'run',side_effect=AssertionError('No SSH')):
             with self.assertRaises(ValueError):storage.preflight(c)
 
+    def test_installed_preflight_accepts_api_defaults_and_rejects_real_drift(self):
+        c=fixture();c['host_capacity']['observed_unix_seconds']=int(storage.time.time())
+        docs=storage.render(c)
+        objects={(d['kind'].lower(),d['metadata']['name']):copy.deepcopy(d) for d in docs}
+        deploy=objects[('deployment','local-path-provisioner')]
+        deploy['status']={'availableReplicas':1}
+        pod=deploy['spec']['template']['spec']
+        # Kubernetes adds these fields even when the submitted YAML omits them.
+        ref=next(e['valueFrom']['fieldRef'] for e in pod['containers'][0]['env'] if e['name']=='POD_NAMESPACE')
+        ref['apiVersion']='v1'
+        pod['volumes'][0]['configMap']['defaultMode']=0o644
+        node=c['nodes'][0]
+        report={'root':c['storage_root'],'symlink':False,'target':c['storage_root'],'uuid':node['filesystem_uuid'],
+            'device':3,'os_device':1,'rke2_device':2,'marker':'pcloud-storage-v1:'+node['filesystem_uuid'],
+            'free_bytes':10**11,'total_bytes':2*10**11,'free_inodes':9000,'total_inodes':10000,
+            'root_uid':0,'root_mode':0o755,'marker_uid':0,'marker_mode':0o644}
+        def api(config,kind,name=None,namespace=None,optional=False):
+            if kind=='nodes':return {'items':[{'metadata':{'name':node['name'],'labels':{'kubernetes.io/hostname':node['name']}},
+                'status':{'conditions':[{'type':'Ready','status':'True'},{'type':'DiskPressure','status':'False'}]}}]}
+            if kind=='deployments':return {'items':[deploy]}
+            if kind in ('statefulsets','daemonsets','jobs','cronjobs'):return {'items':[]}
+            return objects[(kind.lower(),name)]
+        with mock.patch.object(storage,'kube',return_value=json.dumps({'serverVersion':{'gitVersion':'v1.35.7'}})),\
+             mock.patch.object(storage,'get',side_effect=api),mock.patch.object(storage,'run',return_value=json.dumps(report)):
+            self.assertEqual(storage.preflight(c,installed=True)['status'],'PASS')
+            for change in ('api-version','namespace-reference','file-mode','mount-write','extra-env'):
+                with self.subTest(change=change):
+                    altered=copy.deepcopy(deploy);objects[('deployment','local-path-provisioner')]=altered
+                    spec=altered['spec']['template']['spec']
+                    env=spec['containers'][0]['env']
+                    changed_ref=next(e['valueFrom']['fieldRef'] for e in env if e['name']=='POD_NAMESPACE')
+                    if change=='api-version':changed_ref['apiVersion']='v2'
+                    if change=='namespace-reference':changed_ref['fieldPath']='metadata.name'
+                    if change=='file-mode':spec['volumes'][0]['configMap']['defaultMode']=0o666
+                    if change=='mount-write':spec['containers'][0]['volumeMounts'][0]['readOnly']=False
+                    if change=='extra-env':env.append({'name':'UNREVIEWED','value':'true'})
+                    with self.assertRaises(ValueError):storage.preflight(c,installed=True)
+            objects[('deployment','local-path-provisioner')]=deploy
+
     def test_supplied_profile_has_no_install_resources(self):
         c={'profile':'supplied-storage','context':'example','supplied_class':'existing','supplied_provisioner':'example.csi','resources':fixture()['resources']}
         self.assertEqual(storage.render(c),[])

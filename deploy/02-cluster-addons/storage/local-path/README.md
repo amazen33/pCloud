@@ -246,11 +246,11 @@ requires operator disposition rather than sweeping unrelated resources.
 See [local static verification](evidence/2026-10-04-static.md) for actual
 commands/results and their limits. It contains no live acceptance claim.
 
-The source baseline is `9805d6f3cdb355ae33d6d35b283cec447c9ed9b9`; changes
-are local until reviewed/committed. Record a dated installation only after
-it occurs: revision/digest, context, UUID/mount and host budgets, tool/image
-versions, real API/helper/smoke results, predecessor health, cleanup and
-limitations. Remote CI, installed binary behaviour, lab acceptance,
-backup/restore and production controls have not been established by static
-checks. The historical lab lacks a confirmed application-storage mount;
-disk preparation is the immediate installation prerequisite.
+The [2026-10-05 Stage 1 installation](evidence/2026-10-05-lab-install.md)
+records the authorized worker mounts, measured capacity, nine-object apply,
+actual provisioner rollout and read-only Live pass. An API-default comparison
+bug found during Live validation is corrected with explicit render defaults
+and a regression test; strict drift guards remain enabled.
+Isolated PVC/Pod persistence, generated helper behavior, controller recovery,
+rebind, retained test-data disposition and reboot evidence remain pending.
+Full lab acceptance, backup/restore and production controls are incomplete.

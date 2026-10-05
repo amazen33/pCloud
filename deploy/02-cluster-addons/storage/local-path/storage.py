@@ -129,6 +129,13 @@ def render(config):
                 '--provisioner-name',PROVISIONER,'--helper-image',locked['docker.io/library/busybox:1.37.0']]
             container['securityContext'] = {'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}}
             container['resources'] = config['resources']['controller']
+            # Declare API defaults so strict Live comparison sees the same inputs
+            # after Kubernetes stores the Deployment. Real drift stays rejected.
+            for env in container.get('env', []):
+                ref = env.get('valueFrom', {}).get('fieldRef')
+                if ref is not None: ref.setdefault('apiVersion', 'v1')
+            for volume in pod.get('volumes', []):
+                if 'configMap' in volume: volume['configMap'].setdefault('defaultMode', 0o644)
         if doc['kind'] == 'StorageClass':
             meta['name'] = CLASS
             meta['annotations'] = {'storageclass.kubernetes.io/is-default-class':'false','defaultVolumeType':'local'}
