@@ -3,8 +3,10 @@
 Status updated on 2026-10-05. M3a Stage 1 was deployed from
 `3a7eee6c673821a56331a7b324ef65f827db3e7d`; merged PR #10 corrected its Live
 checker/render defaults and recorded the actual installation.
-the corrected isolated storage smoke and cleanup passed at `afc43ac` on PR #11.
-Worker reboot persistence remains untested. Other deployment
+The corrected isolated storage smoke and cleanup passed at `afc43ac` on PR #11.
+PR #11 merged as `dc99e7c028c36033965b0cc58388dd22c6c86534`; both workers
+then passed separately authorized reboot/remount/data persistence and cleanup.
+M3a's required node-local lab storage gates are complete. Other deployment
 claims retain their dated limits; see [deployment evidence and limits](../deploy/README.md).
 
 These identifiers formalize the layer-based plan. A design, implementation,
@@ -16,7 +18,7 @@ lab acceptance stays incomplete until the dated evidence exists.
 | M0 | Repository split, governance, product boundaries and test dispatch | Implemented in the repository; the explanatory ownership ADR is still proposed | Preserve the contract, layout guard, CI invocation and package independence |
 | M1 | Layer 0 Hyper-V provisioning | Package merged; this revision not applied to the lab | Reviewed plan, host-capacity check, authorized apply and recorded inventory handover |
 | M2 | Layer 1 OS/RKE2 engine | Package merged; dedicated data-mount policy not applied to the lab | Authorized fresh install or separate migration, health/security checks and revision-specific evidence |
-| M3a | Layer 2 persistent filesystem storage | Installed on 2026-10-05; Live, all eight isolated smoke checks, actual helper capture and synthetic cleanup passed; worker reboot gate pending | Separate authorized worker reboot/remount/data-persistence evidence before full lab completion |
+| M3a | Layer 2 persistent filesystem storage | Required node-local lab gates passed on 2026-10-05: installation, strict Live, eight isolated smoke checks, actual helpers, both worker reboot/mount/data checks and synthetic cleanup | Maintain mounted/capacity prerequisites before consumer deployment; no HA, backup/restore or production acceptance |
 | M3b | Layer 2 secret management | OpenBao lab / supplied API profiles implemented with TLS/Raft, guarded lifecycle, local TLS/static/render tests and CI/dispatcher integration; no deployment/live acceptance | Measured capacity, trusted TLS and key custody; live authorization/rotation/audit, restart/reunseal and isolated snapshot restore evidence |
 | M3c | Observability data backend / object-storage capability | Native monolithic filesystem profile implemented: distinct claims, pinned storage fragments/capability, guarded probes and local Linux POSIX/static/render validation; no deployment | Accepted mounted filesystem/remount/UID checks, retained test-PV disposition; signal-specific ingest/query/recovery evidence with M4 |
 | M4 | Layer 3 OpenTelemetry and LGTM | Standalone lab runtime, explicit M3c inputs, TLS role gateway, capability, guarded API conformance and offline/render checks implemented; isolated Linux signal/TLS/dashboard/alert/restart exercise passed; no cluster deployment | Required M3 capabilities or supplied equivalents; independent ingest/query, access, retention, recovery and soak evidence |
@@ -50,12 +52,15 @@ capacity, provisioner rollout and read-only Live pass are recorded in
 [the dated installation evidence](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
 The [dated isolated smoke](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-smoke.md)
 records persistence, controller recovery, affinity rejection, retained-volume
-rebind, actual helper capture and complete synthetic cleanup. Worker reboot
-persistence requires a separate authorized scope and remains untested.
+rebind, actual helper capture and complete synthetic cleanup. The separately
+authorized [serial worker reboot](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-reboot.md)
+then proved automatic mount recovery and unchanged checksums on both workers,
+followed by complete synthetic cleanup and strict Live. M3a's required lab
+storage gates are complete; M3b is the next deployment prerequisite.
 No infrastructure modification is authorized by this milestone tracker.
-The [installation proposal](work-orders/M3a-lab-install.md) lists the actual
-remaining inputs and deployment/acceptance gate; local static results are
-recorded separately from live acceptance.
+The historical [installation proposal](work-orders/M3a-lab-install.md) preserves
+the original inputs and deployment/acceptance gate; its status links point to
+the subsequent execution records. Static results remain separate from live acceptance.
 
 M3c selects the explicit native filesystem alternative for one monolithic
 instance each of Loki, Tempo and Mimir; see the
@@ -72,7 +77,9 @@ M3b is implemented under the same delegated engineering scope; see the
 [work order](work-orders/M3b-lab-secrets.md) and
 [standalone package](../deploy/02-cluster-addons/secrets/openbao/README.md).
 Its automated conformance deliberately stays INCOMPLETE until operator restart
-and isolated restore evidence is recorded. No lab changes have been performed.
+and isolated restore evidence is recorded. No secrets-package lab changes have
+been performed. Before deployment, resolve measured capacity, trusted TLS and
+key custody; a chosen storage path alone does not establish secure custody.
 M4's [lab LGTM/Collector package](../deploy/03-observability/README.md) is
 implemented under [ADR-0004](adr/0004-lab-observability-runtime.md) and its
 [work order](work-orders/M4-lab-observability.md). Automated conformance stays

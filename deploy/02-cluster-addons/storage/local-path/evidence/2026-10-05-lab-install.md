@@ -5,8 +5,10 @@ Status: installed; read-only Live checks passed; isolated acceptance pending.
 
 This is the Stage 1 record. The owner subsequently approved the isolated
 smoke; its [separate dated evidence](2026-10-05-lab-smoke.md) records the final
-persistence/recovery/helper/affinity/rebind and cleanup pass. Worker reboot
-persistence remains untested.
+persistence/recovery/helper/affinity/rebind and cleanup pass. The subsequently
+authorized [serial worker reboot](2026-10-05-lab-reboot.md) passed mount/data
+persistence on both workers and cleanup. The Stage 1 results below retain
+their original scope and point-in-time limits.
 
 ## Authorization and revision
 

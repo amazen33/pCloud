@@ -76,8 +76,9 @@ Layer 2 packages. The [storage package](storage/local-path/README.md) implements
 the [accepted lab profile](../../docs/adr/0001-lab-persistent-storage.md), with
 static checks and gated live acceptance. Its
 [2026-10-05 isolated smoke](storage/local-path/evidence/2026-10-05-lab-smoke.md)
-passed persistence/recovery/helper/affinity/rebind and cleanup; worker reboot
-persistence remains untested.
+passed persistence/recovery/helper/affinity/rebind and cleanup. Both workers
+then passed [serial reboot/mount/data persistence](storage/local-path/evidence/2026-10-05-lab-reboot.md)
+and cleanup, completing M3a's required node-local lab storage gates.
 The [secrets package](secrets/openbao/README.md) implements the OpenBao lab
 profile and supplied API conformance boundary, with static validation and
 pending deployment/acceptance. Storage and secrets each have their own
