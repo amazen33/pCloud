@@ -1,8 +1,10 @@
 # pCloud milestones
 
 Status updated on 2026-10-05. M3a Stage 1 was deployed from
-`3a7eee6c673821a56331a7b324ef65f827db3e7d`; this change corrects its Live
-checker/render defaults and records the actual installation. Other deployment
+`3a7eee6c673821a56331a7b324ef65f827db3e7d`; merged PR #10 corrected its Live
+checker/render defaults and recorded the actual installation.
+the corrected isolated storage smoke and cleanup passed at `afc43ac` on PR #11.
+Worker reboot persistence remains untested. Other deployment
 claims retain their dated limits; see [deployment evidence and limits](../deploy/README.md).
 
 These identifiers formalize the layer-based plan. A design, implementation,
@@ -14,7 +16,7 @@ lab acceptance stays incomplete until the dated evidence exists.
 | M0 | Repository split, governance, product boundaries and test dispatch | Implemented in the repository; the explanatory ownership ADR is still proposed | Preserve the contract, layout guard, CI invocation and package independence |
 | M1 | Layer 0 Hyper-V provisioning | Package merged; this revision not applied to the lab | Reviewed plan, host-capacity check, authorized apply and recorded inventory handover |
 | M2 | Layer 1 OS/RKE2 engine | Package merged; dedicated data-mount policy not applied to the lab | Authorized fresh install or separate migration, health/security checks and revision-specific evidence |
-| M3a | Layer 2 persistent filesystem storage | Stage 1 installed on 2026-10-05: worker mounts/capacity, nine-object apply, provisioner available and read-only Live pass; isolated acceptance incomplete | Authorized persistence/helper/affinity/rebind/controller-recovery tests, retained-data disposition and dated evidence |
+| M3a | Layer 2 persistent filesystem storage | Installed on 2026-10-05; Live, all eight isolated smoke checks, actual helper capture and synthetic cleanup passed; worker reboot gate pending | Separate authorized worker reboot/remount/data-persistence evidence before full lab completion |
 | M3b | Layer 2 secret management | OpenBao lab / supplied API profiles implemented with TLS/Raft, guarded lifecycle, local TLS/static/render tests and CI/dispatcher integration; no deployment/live acceptance | Measured capacity, trusted TLS and key custody; live authorization/rotation/audit, restart/reunseal and isolated snapshot restore evidence |
 | M3c | Observability data backend / object-storage capability | Native monolithic filesystem profile implemented: distinct claims, pinned storage fragments/capability, guarded probes and local Linux POSIX/static/render validation; no deployment | Accepted mounted filesystem/remount/UID checks, retained test-PV disposition; signal-specific ingest/query/recovery evidence with M4 |
 | M4 | Layer 3 OpenTelemetry and LGTM | Standalone lab runtime, explicit M3c inputs, TLS role gateway, capability, guarded API conformance and offline/render checks implemented; isolated Linux signal/TLS/dashboard/alert/restart exercise passed; no cluster deployment | Required M3 capabilities or supplied equivalents; independent ingest/query, access, retention, recovery and soak evidence |
@@ -46,7 +48,10 @@ code and static checks; see the [package](../deploy/02-cluster-addons/storage/lo
 The owner authorized Stage 1 installation on 2026-10-05; current mounts,
 capacity, provisioner rollout and read-only Live pass are recorded in
 [the dated installation evidence](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
-Isolated storage acceptance remains a later gate.
+The [dated isolated smoke](../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-smoke.md)
+records persistence, controller recovery, affinity rejection, retained-volume
+rebind, actual helper capture and complete synthetic cleanup. Worker reboot
+persistence requires a separate authorized scope and remains untested.
 No infrastructure modification is authorized by this milestone tracker.
 The [installation proposal](work-orders/M3a-lab-install.md) lists the actual
 remaining inputs and deployment/acceptance gate; local static results are

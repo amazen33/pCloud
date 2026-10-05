@@ -42,8 +42,8 @@ Layers 0-2 have implementation packages, including
 [lab filesystem storage](deploy/02-cluster-addons/storage/local-path/README.md).
 Storage and [lab secrets](deploy/02-cluster-addons/secrets/openbao/README.md)
 and the [observability filesystem handover](deploy/02-cluster-addons/storage/observability-filesystem/README.md)
-have local validation; no storage/secrets/backend installation or live
-acceptance is claimed. The [lab LGTM/Collector runtime](deploy/03-observability/README.md) is now
+have local validation. Local-path storage is installed with isolated smoke
+evidence; secrets/backend remain undeployed. The [lab LGTM/Collector runtime](deploy/03-observability/README.md) is now
 implemented with offline validation; no Layer 3 deployment or lab acceptance.
 Kafka and APISIX remain planned.
 
@@ -53,7 +53,8 @@ and an [implementation work order](docs/work-orders/M3a-lab-storage.md).
 The owner authorized Codex to implement that work in the Claude engineering
 role. M3a's [Stage 1 lab installation](deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md)
 has verified application mounts, a running provisioner and read-only Live pass;
-isolated persistence/recovery acceptance remains pending. Crossplane is
+its [isolated persistence/recovery smoke](deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-smoke.md)
+and cleanup passed. Worker reboot persistence remains untested. Crossplane is
 deferred; it is not a dependency of this lab.
 
 The [static local-PV package](deploy/02-storage/local-pv/README.md) is also

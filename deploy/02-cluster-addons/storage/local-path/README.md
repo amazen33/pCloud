@@ -3,7 +3,7 @@
 Standalone Layer 2 package for Local Path Provisioner **v0.0.37** on Linux
 Kubernetes **1.35.x**. The owner accepted this lab profile and its namespace
 exception on 2026-10-04. Stage 1 installation and strict Live checks passed
-on 2026-10-05; isolated acceptance is being recorded separately in
+on 2026-10-05; isolated smoke and cleanup passed, recorded separately in
 [the dated smoke evidence](evidence/2026-10-05-lab-smoke.md).
 
 ## Profiles and capability
@@ -252,6 +252,8 @@ records the authorized worker mounts, measured capacity, nine-object apply,
 actual provisioner rollout and read-only Live pass. An API-default comparison
 bug found during Live validation is corrected with explicit render defaults
 and a regression test; strict drift guards remain enabled.
-Isolated PVC/Pod persistence, generated helper behavior, controller recovery,
-rebind, retained test-data disposition and reboot evidence remain pending.
-Full lab acceptance, backup/restore and production controls are incomplete.
+The [dated isolated smoke](evidence/2026-10-05-lab-smoke.md) records passed
+PVC/Pod persistence, actual generated helpers, controller recovery, affinity
+rejection, retained-volume rebind and complete synthetic-data cleanup.
+Worker reboot/remount persistence remains untested; full lab completion,
+backup/restore and production controls are incomplete.

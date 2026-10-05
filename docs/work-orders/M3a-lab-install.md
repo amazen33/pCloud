@@ -2,6 +2,8 @@
 
 Historical proposal from 2026-10-04. The owner subsequently authorized Stage 1;
 see [2026-10-05 installation and remaining acceptance gates](../../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-install.md).
+The subsequently authorized [isolated storage smoke and cleanup](../../deploy/02-cluster-addons/storage/local-path/evidence/2026-10-05-lab-smoke.md)
+passed; worker reboot persistence remains a separate untested gate.
 The inputs/status below describe the original proposal, not the current installation.
 
 **Status:** Package implemented and statically validated; target inputs
